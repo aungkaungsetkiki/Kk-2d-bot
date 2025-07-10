@@ -15,6 +15,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
+logger = logging.getLogger(__name__)
 
 # Globals
 admin_id = None
@@ -28,6 +29,7 @@ overbuy_list = {}
 
 # Utility
 def reverse_number(n):
+    """ဂဏန်းကိုပြောင်းပြန်လှန်ပေးခြင်း (23 -> 32)"""
     s = str(n).zfill(2)
     return int(s[::-1])
 
@@ -43,14 +45,22 @@ def get_current_date_key():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global admin_id
     admin_id = update.effective_user.id
-    await update.message.reply_text("🤖 Bot started.")
+    await update.message.reply_text("🤖 Bot started. /dateopen ဖြင့် စာရင်းဖွင့်ပါ")
 
 async def dateopen(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != admin_id:
+        await update.message.reply_text("Admin သာလုပ်ဆောင်နိုင်ပါသည်")
+        return
+        
     key = get_current_date_key()
     date_control[key] = True
     await update.message.reply_text(f"{key} စာရင်းဖွင့်ပြီးပါပြီ")
 
 async def dateclose(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != admin_id:
+        await update.message.reply_text("Admin သာလုပ်ဆောင်နိုင်ပါသည်")
+        return
+        
     key = get_current_date_key()
     date_control[key] = False
     await update.message.reply_text(f"{key} စာရင်းပိတ်လိုက်ပါပြီ")
@@ -141,13 +151,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     for k in range(len(digits)):
                         if j != k:
                             combo = digits[j] * 10 + digits[k]
-                            if combo not in pairs:  # ထပ်နေတာကို ရှောင်ဖို့
+                            if combo not in pairs:
                                 pairs.append(combo)
                 # အပူးပါအခွေအတွက် နှစ်ခါပါဂဏန်းများ
                 if entry.endswith('အပူးပါအခွေ'):
                     for d in digits:
                         double = d * 10 + d
-                        if double not in pairs:  # ထပ်နေတာကို ရှောင်ဖို့
+                        if double not in pairs:
                             pairs.append(double)
                 if i+1 < len(entries) and entries[i+1].isdigit():
                     amt = int(entries[i+1])
@@ -216,9 +226,202 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("အချက်အလက်များကိုစစ်ဆေးပါ")
 
+async def ledger_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    lines = ["📒 Ledger Summary"]
+    for i in range(100):
+        total = ledger.get(i, 0)
+        if total > 0:
+            lines.append(f"{i:02d} ➤ {total}")
+    await update.message.reply_text("\n".join(lines))
+
+async def break_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        if not context.args:
+            await update.message.reply_text("Usage: /break [limit]")
+            return
+            
+        limit = int(context.args[0])
+        msg = ["📌 Over Limit:"]
+        for k, v in ledger.items():
+            if v > limit:
+                msg.append(f"{k:02d} ➤ {v - limit}")
+        
+        if len(msg) == 1:
+            await update.message.reply_text("ဘယ်ဂဏန်းမှ limit မကျော်ပါ")
+        else:
+            await update.message.reply_text("\n".join(msg))
+    except (ValueError, IndexError):
+        await update.message.reply_text("Limit amount ထည့်ပါ (ဥပမာ: /break 5000)")
+
+async def overbuy(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != admin_id:
+        await update.message.reply_text("Admin သာလုပ်ဆောင်နိုင်ပါသည်")
+        return
+        
+    if not context.args:
+        await update.message.reply_text("Usage: /overbuy [username]")
+        return
+        
+    user = context.args[0]
+    overbuy_list[user] = ledger.copy()
+    await update.message.reply_text(f"{user} အတွက် overbuy စာရင်းပြထားပါတယ်")
+
+async def pnumber(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global pnumber_value
+    try:
+        if not context.args:
+            await update.message.reply_text("Usage: /pnumber [number]")
+            return
+            
+        pnumber_value = int(context.args[0])
+        if pnumber_value < 0 or pnumber_value > 99:
+            await update.message.reply_text("ဂဏန်းကို 0 နှင့် 99 ကြားထည့်ပါ")
+            return
+            
+        msg = []
+        for user, records in user_data.items():
+            total = 0
+            for date_key in records:
+                for num, amt in records[date_key]:
+                    if num == pnumber_value:
+                        total += amt
+            if total > 0:
+                msg.append(f"{user}: {pnumber_value:02d} ➤ {total}")
+        
+        if msg:
+            await update.message.reply_text("\n".join(msg))
+        else:
+            await update.message.reply_text(f"{pnumber_value:02d} အတွက် လောင်းကြေးမရှိပါ")
+    except (ValueError, IndexError):
+        await update.message.reply_text("ဂဏန်းမှန်မှန်ထည့်ပါ (ဥပမာ: /pnumber 15)")
+
+async def comandza(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != admin_id:
+        await update.message.reply_text("Admin သာလုပ်ဆောင်နိုင်ပါသည်")
+        return
+        
+    if not user_data:
+        await update.message.reply_text("လက်ရှိ user မရှိပါ")
+        return
+        
+    users = list(user_data.keys())
+    keyboard = [[InlineKeyboardButton(u, callback_data=f"comza:{u}")] for u in users]
+    await update.message.reply_text("User ကိုရွေးပါ", reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def comza_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    context.user_data['selected_user'] = query.data.split(":")[1]
+    await query.edit_message_text(f"{context.user_data['selected_user']} ကိုရွေးထားသည်။ 15/80 လို့ထည့်ပါ")
+
+async def comza_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = context.user_data.get('selected_user')
+    if not user:
+        await handle_message(update, context)
+        return
+        
+    text = update.message.text
+    if '/' in text:
+        try:
+            parts = text.split('/')
+            if len(parts) != 2:
+                raise ValueError
+            
+            com = int(parts[0])
+            za = int(parts[1])
+            
+            if com < 0 or com > 100 or za < 0:
+                raise ValueError
+                
+            com_data[user] = com
+            za_data[user] = za
+            del context.user_data['selected_user']
+            await update.message.reply_text(f"Com {com}%, Za {za} မှတ်ထားပြီး")
+        except:
+            await update.message.reply_text("မှန်မှန်ရေးပါ (ဥပမာ: 15/80)")
+    else:
+        await update.message.reply_text("ဖော်မတ်မှားနေပါသည်။ 15/80 လို့ထည့်ပါ")
+
+async def total(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != admin_id:
+        await update.message.reply_text("Admin သာလုပ်ဆောင်နိုင်ပါသည်")
+        return
+        
+    if not user_data:
+        await update.message.reply_text("လက်ရှိစာရင်းမရှိပါ")
+        return
+        
+    if pnumber_value is None:
+        await update.message.reply_text("ကျေးဇူးပြု၍ /pnumber ဖြင့် power number သတ်မှတ်ပါ")
+        return
+        
+    msg = []
+    for user, records in user_data.items():
+        total_amt = 0
+        pamt = 0
+        
+        for date_key in records:
+            for num, amt in records[date_key]:
+                total_amt += amt
+                if num == pnumber_value:
+                    pamt += amt
+        
+        com = com_data.get(user, 0)
+        za = za_data.get(user, 0)
+        
+        commission_amt = (total_amt * com) // 100
+        after_com = total_amt - commission_amt
+        win_amt = pamt * za
+        
+        net = after_com - win_amt
+        status = "ဒိုင်ကပေးရမည်" if net < 0 else "ဒိုင်ကရမည်"
+        
+        user_report = (
+            f"{user}\n"
+            f"Total: {total_amt}\n"
+            f"Com({com}%) ➤ {commission_amt}\n"
+            f"After Com: {after_com}\n"
+            f"Pnumber({pnumber_value:02d}) ➤ {pamt}\n"
+            f"Za({za}) ➤ {win_amt}\n"
+            f"Result: {abs(net)} ({status})\n"
+            "---"
+        )
+        msg.append(user_report)
+
+    await update.message.reply_text("\n".join(msg))
+
+async def tsent(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != admin_id:
+        await update.message.reply_text("Admin သာလုပ်ဆောင်နိုင်ပါသည်")
+        return
+        
+    if not user_data:
+        await update.message.reply_text("လက်ရှိ user မရှိပါ")
+        return
+        
+    for user in user_data:
+        await update.message.reply_text(f"{user} အတွက်စာရင်းပေးပို့ပြီး")
+
+async def alldata(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != admin_id:
+        await update.message.reply_text("Admin သာလုပ်ဆောင်နိုင်ပါသည်")
+        return
+        
+    if not user_data:
+        await update.message.reply_text("လက်ရှိစာရင်းမရှိပါ")
+        return
+        
+    msg = ["👥 Registered Users:"]
+    msg.extend(user_data.keys())
+    await update.message.reply_text("\n".join(msg))
+
+# Main
 if __name__ == "__main__":
+    if not TOKEN:
+        raise ValueError("BOT_TOKEN environment variable is not set")
+        
     app = ApplicationBuilder().token(TOKEN).build()
-    
+
     # Command handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("dateopen", dateopen))
@@ -232,8 +435,10 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("tsent", tsent))
     app.add_handler(CommandHandler("alldata", alldata))
 
+    # Callback and message handlers
     app.add_handler(CallbackQueryHandler(comza_input, pattern=r"^comza:"))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), comza_text))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
 
+    logger.info("Bot is starting...")
     app.run_polling()
