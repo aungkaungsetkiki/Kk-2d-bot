@@ -85,9 +85,9 @@ async def dateclose(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user = update.effective_user
-        logger.info(f"Message from {user.username}: {update.message.text}")
+        text = update.message.text
         
-        if not user.username:
+        if not user or not user.username:
             await update.message.reply_text("❌ ကျေးဇူးပြု၍ Telegram username သတ်မှတ်ပါ")
             return
 
@@ -96,7 +96,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ စာရင်းပိတ်ထားပါသည်")
             return
 
-        text = update.message.text
+        if not text:
+            await update.message.reply_text("⚠️ မက်ဆေ့ဂျ်မရှိပါ")
+            return
+
         entries = text.split()
         added = 0
         bets = []
@@ -109,7 +112,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         i = 0
         while i < len(entries):
             entry = entries[i]
-            logger.info(f"Processing entry: {entry}")
             
             # အထူးစနစ်များအတွက် သတ်မှတ်ချက်များ
             fixed_special_cases = {
@@ -124,10 +126,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if entry in fixed_special_cases:
                 if i+1 < len(entries) and entries[i+1].isdigit():
                     amt = int(entries[i+1])
-                    logger.info(f"Special case {entry} with amount {amt}")
                     for num in fixed_special_cases[entry]:
                         bets.append((num, amt))
                     i += 2
+                    continue
+                else:
+                    i += 1
                     continue
             
             # ထိပ်/ပိတ်/ဘရိတ်/အပါ စနစ်များအတွက်
@@ -154,10 +158,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             # ပမာဏထည့်သွင်းခြင်း
                             if i+1 < len(entries) and entries[i+1].isdigit():
                                 amt = int(entries[i+1])
-                                logger.info(f"Dynamic {dtype} {digit_val} with amount {amt}")
                                 for num in numbers:
                                     bets.append((num, amt))
                                 i += 2
+                                found_dynamic = True
+                            else:
+                                i += 1
                                 found_dynamic = True
                             break
             if found_dynamic:
@@ -184,11 +190,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 pairs.append(double)
                     if i+1 < len(entries) and entries[i+1].isdigit():
                         amt = int(entries[i+1])
-                        logger.info(f"Box system {entry} with amount {amt}")
                         for num in pairs:
                             bets.append((num, amt))
                         i += 2
                         continue
+                    else:
+                        i += 1
+                        continue
+                else:
+                    i += 1
+                    continue
             
             # r ပါသောပုံစံများ
             if 'r' in entry:
@@ -197,9 +208,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     num = int(parts[0])
                     amt = int(parts[1])
                     rev = reverse_number(num)
-                    logger.info(f"r system: {num} and {rev} with {amt}")
                     bets.append((num, amt))
                     bets.append((rev, amt))
+                    i += 1
+                    continue
+                else:
                     i += 1
                     continue
             
@@ -209,8 +222,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
                     num = int(parts[0])
                     amt = int(parts[1])
-                    logger.info(f"Normal entry: {num} with {amt}")
                     bets.append((num, amt))
+                    i += 1
+                    continue
+                else:
                     i += 1
                     continue
             
@@ -224,7 +239,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         amt1 = int(r_parts[0])
                         amt2 = int(r_parts[1])
                         rev = reverse_number(num)
-                        logger.info(f"Group with r: {num} ({amt1}), {rev} ({amt2})")
                         bets.append((num, amt1))
                         bets.append((rev, amt2))
                         i += 2
@@ -232,16 +246,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 # ပုံမှန်ပမာဏ
                 if i+1 < len(entries) and entries[i+1].isdigit():
                     amt = int(entries[i+1])
-                    logger.info(f"Group: {num} with {amt}")
                     bets.append((num, amt))
                     i += 2
                     continue
                 # ပမာဏမပါသော ဂဏန်းများ
-                logger.info(f"Single number: {num} with default 500")
                 bets.append((num, 500))
                 i += 1
                 continue
             
+            # မညီမညာဖြစ်သောအချက်အလက်များကို skip လုပ်ခြင်း
             i += 1
 
         # စာရင်းသွင်းခြင်းနှင့် စုစုပေါင်းတွက်ချက်ခြင်း
@@ -332,17 +345,18 @@ async def pnumber(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("ℹ️ Usage: /pnumber [number]")
             return
             
-        pnumber_value = int(context.args[0])
-        if pnumber_value < 0 or pnumber_value > 99:
+        num = int(context.args[0])
+        if num < 0 or num > 99:
             await update.message.reply_text("⚠️ ဂဏန်းကို 0 နှင့် 99 ကြားထည့်ပါ")
             return
             
+        pnumber_value = num
         msg = []
         for user, records in user_data.items():
             total = 0
             for date_key in records:
-                for num, amt in records[date_key]:
-                    if num == pnumber_value:
+                for bet_num, amt in records[date_key]:
+                    if bet_num == pnumber_value:
                         total += amt
             if total > 0:
                 msg.append(f"{user}: {pnumber_value:02d} ➤ {total}")
@@ -389,11 +403,12 @@ async def comza_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user = context.user_data.get('selected_user')
         if not user:
+            # No selected user, process as normal bet
             await handle_message(update, context)
             return
             
         text = update.message.text
-        if '/' in text:
+        if text and '/' in text:
             try:
                 parts = text.split('/')
                 if len(parts) != 2:
@@ -530,8 +545,8 @@ if __name__ == "__main__":
 
     # Callback and message handlers
     app.add_handler(CallbackQueryHandler(comza_input, pattern=r"^comza:"))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), comza_text))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), comza_text))
 
     logger.info("🚀 Bot is starting...")
     app.run_polling()
