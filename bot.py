@@ -115,7 +115,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             amount = int(entries[-1])
             numbers = []
             
-            # နောက်ဆုံးဂဏန်းကလွဲပြီး အားလုံးကို ဂဏန်းစစ်ဆေးခြင်း
             for token in entries[:-1]:
                 if token.isdigit() and 0 <= int(token) <= 99:
                     numbers.append(int(token))
@@ -123,13 +122,47 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if numbers and amount > 0:
                 for num in numbers:
                     bets.append((num, amount))
-                # Skip to end of processing
                 i = len(entries)
+            else:
+                i = 0
+        # Reverse multi-number format (12 34 56r1000)
+        elif len(entries) > 1 and any('r' in token for token in entries):
+            # Find the last reverse token
+            reverse_token = None
+            for idx, token in enumerate(entries):
+                if 'r' in token:
+                    reverse_token = (idx, token)
+            
+            if reverse_token:
+                idx, token = reverse_token
+                parts = token.split('r')
+                if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+                    amount = int(parts[1])
+                    numbers = []
+                    
+                    # Collect all numbers except the reverse token
+                    for j in range(len(entries)):
+                        if j != idx and entries[j].isdigit() and 0 <= int(entries[j]) <= 99:
+                            numbers.append(int(entries[j]))
+                    
+                    # Add the number from the reverse token
+                    numbers.append(int(parts[0]))
+                    
+                    if numbers and amount > 0:
+                        for num in numbers:
+                            bets.append((num, amount))
+                            bets.append((reverse_number(num), amount))
+                        i = len(entries)
+                    else:
+                        i = 0
+                else:
+                    i = 0
             else:
                 i = 0
         else:
             i = 0
 
+        # Process individual tokens
         while i < len(entries):
             entry = entries[i]
             
