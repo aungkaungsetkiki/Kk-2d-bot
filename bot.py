@@ -109,11 +109,31 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if key not in user_data[user.username]:
             user_data[user.username][key] = []
 
-        i = 0
+        # ========== Multi-number format handling ==========
+        # ဂဏန်းအများကြီးနဲ့ ပမာဏတစ်ခု (12 25 36 15 48 69 50 25 36 40 400)
+        if len(entries) > 1 and entries[-1].isdigit():
+            amount = int(entries[-1])
+            numbers = []
+            
+            # နောက်ဆုံးဂဏန်းကလွဲပြီး အားလုံးကို ဂဏန်းစစ်ဆေးခြင်း
+            for token in entries[:-1]:
+                if token.isdigit() and 0 <= int(token) <= 99:
+                    numbers.append(int(token))
+            
+            if numbers and amount > 0:
+                for num in numbers:
+                    bets.append((num, amount))
+                # Skip to end of processing
+                i = len(entries)
+            else:
+                i = 0
+        else:
+            i = 0
+
         while i < len(entries):
             entry = entries[i]
             
-            # အထူးစနစ်များအတွက် သတ်မှတ်ချက်များ
+            # အထူးစနစ်များ (အပူး, ပါဝါ, နက္ခ, ညီကို, ကိုညီ)
             fixed_special_cases = {
                 "အပူး": [0, 11, 22, 33, 44, 55, 66, 77, 88, 99],
                 "ပါဝါ": [5, 16, 27, 38, 49, 50, 61, 72, 83, 94],
@@ -275,7 +295,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def ledger_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        lines = ["📒 Ledger Summary"]
+        lines = ["📒 လက်ကျန်ငွေစာရင်း"]
         for i in range(100):
             total = ledger.get(i, 0)
             if total > 0:
@@ -301,7 +321,7 @@ async def break_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
             
         limit = int(context.args[0])
-        msg = ["📌 Over Limit:"]
+        msg = ["📌 Limit ကျော်ဂဏန်းများ:"]
         for k, v in ledger.items():
             if v > limit:
                 msg.append(f"{k:02d} ➤ {v - limit}")
@@ -448,37 +468,44 @@ async def total(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
             
         msg = []
+        total_net = 0
+        
         for user, records in user_data.items():
-            total_amt = 0
-            pamt = 0
+            user_total_amt = 0
+            user_pamt = 0
             
             for date_key in records:
                 for num, amt in records[date_key]:
-                    total_amt += amt
+                    user_total_amt += amt
                     if num == pnumber_value:
-                        pamt += amt
+                        user_pamt += amt
             
             com = com_data.get(user, 0)
             za = za_data.get(user, 0)
             
-            commission_amt = (total_amt * com) // 100
-            after_com = total_amt - commission_amt
-            win_amt = pamt * za
+            commission_amt = (user_total_amt * com) // 100
+            after_com = user_total_amt - commission_amt
+            win_amt = user_pamt * za
             
             net = after_com - win_amt
             status = "ဒိုင်ကပေးရမည်" if net < 0 else "ဒိုင်ကရမည်"
             
             user_report = (
                 f"👤 {user}\n"
-                f"💵 Total: {total_amt}\n"
+                f"💵 စုစုပေါင်း: {user_total_amt}\n"
                 f"📊 Com({com}%) ➤ {commission_amt}\n"
-                f"💰 After Com: {after_com}\n"
-                f"🔢 Pnumber({pnumber_value:02d}) ➤ {pamt}\n"
+                f"💰 Com ပြီး: {after_com}\n"
+                f"🔢 Power Number({pnumber_value:02d}) ➤ {user_pamt}\n"
                 f"🎯 Za({za}) ➤ {win_amt}\n"
-                f"📈 Result: {abs(net)} ({status})\n"
-                "---"
+                f"📈 ရလဒ်: {abs(net)} ({status})\n"
+                "-----------------"
             )
             msg.append(user_report)
+            total_net += net
+
+        # Grand total
+        grand_status = "ဒိုင်အရှုံး" if total_net < 0 else "ဒိုင်အမြတ်"
+        msg.append(f"\n📊 စုစုပေါင်းရလဒ်: {abs(total_net)} ({grand_status})")
 
         if msg:
             await update.message.reply_text("\n".join(msg))
@@ -500,7 +527,19 @@ async def tsent(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
             
         for user in user_data:
-            await update.message.reply_text(f"📤 {user} အတွက်စာရင်းပေးပို့ပြီး")
+            user_report = []
+            total_amt = 0
+            
+            for date_key, records in user_data[user].items():
+                user_report.append(f"📅 {date_key}:")
+                for num, amt in records:
+                    user_report.append(f"  - {num:02d} ➤ {amt}")
+                    total_amt += amt
+            
+            user_report.append(f"💵 စုစုပေါင်း: {total_amt}")
+            await update.message.reply_text("\n".join(user_report))
+        
+        await update.message.reply_text("✅ စာရင်းများအားလုံး ပေးပို့ပြီးပါပြီ")
     except Exception as e:
         logger.error(f"Error in tsent: {str(e)}")
         await update.message.reply_text(f"❌ Error: {str(e)}")
@@ -516,11 +555,31 @@ async def alldata(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("ℹ️ လက်ရှိစာရင်းမရှိပါ")
             return
             
-        msg = ["👥 Registered Users:"]
-        msg.extend(user_data.keys())
+        msg = ["👥 မှတ်ပုံတင်ထားသော user များ:"]
+        msg.extend([f"• {user}" for user in user_data.keys()])
+        
         await update.message.reply_text("\n".join(msg))
     except Exception as e:
         logger.error(f"Error in alldata: {str(e)}")
+        await update.message.reply_text(f"❌ Error: {str(e)}")
+
+async def reset_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global admin_id, user_data, ledger, za_data, com_data, date_control, overbuy_list
+    try:
+        if update.effective_user.id != admin_id:
+            await update.message.reply_text("❌ Admin only command")
+            return
+            
+        user_data = {}
+        ledger = {}
+        za_data = {}
+        com_data = {}
+        date_control = {}
+        overbuy_list = {}
+        
+        await update.message.reply_text("✅ ဒေတာများအားလုံးကို ပြန်လည်သုတ်သင်ပြီးပါပြီ")
+    except Exception as e:
+        logger.error(f"Error in reset_data: {str(e)}")
         await update.message.reply_text(f"❌ Error: {str(e)}")
 
 # Main
@@ -542,11 +601,12 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("total", total))
     app.add_handler(CommandHandler("tsent", tsent))
     app.add_handler(CommandHandler("alldata", alldata))
+    app.add_handler(CommandHandler("reset", reset_data))
 
     # Callback and message handlers
     app.add_handler(CallbackQueryHandler(comza_input, pattern=r"^comza:"))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), comza_text))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, comza_text))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     logger.info("🚀 Bot is starting...")
     app.run_polling()
