@@ -5,16 +5,8 @@ from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
     CallbackQueryHandler, ContextTypes, filters
 )
-
-from datetime import datetime, time, timedelta
-
-def get_time_segment():
-    now = datetime.utcnow() + timedelta(hours=6, minutes=30)  # Myanmar Time UTC+6:30
-    return "AM" if now.time() < time(12, 0) else "PM"
-
-def get_current_date_key():
-    now = datetime.utcnow() + timedelta(hours=6, minutes=30)
-    return f"{now.strftime('%d/%m/%Y')} {get_time_segment()}"
+from datetime import datetime, time
+import pytz
 
 # Environment variable မှ token ကိုဖတ်ရန်
 TOKEN = os.getenv("BOT_TOKEN")
