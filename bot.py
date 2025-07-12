@@ -6,6 +6,7 @@ from telegram.ext import (
     CallbackQueryHandler, ContextTypes, filters
 )
 from datetime import datetime, time
+import pytz
 
 # Environment variable မှ token ကိုဖတ်ရန်
 TOKEN = os.getenv("BOT_TOKEN")
@@ -29,16 +30,19 @@ overbuy_list = {}
 
 # Utility
 def reverse_number(n):
-    """ဂဏန်းကိုပြောင်းပြန်လှန်ပေးခြင်း (23 -> 32)"""
-    s = str(n).zfill(2)
-    return int(s[::-1])
+    """Handle single-digit numbers correctly (5→50)"""
+    if 0 <= n <= 9:
+        return n * 10
+    return int(str(n)[::-1])
 
 def get_time_segment():
-    now = datetime.now().time()
+    myanmar_tz = pytz.timezone('Asia/Yangon')
+    now = datetime.now(myanmar_tz).time()
     return "AM" if now < time(12, 0) else "PM"
 
 def get_current_date_key():
-    now = datetime.now()
+    myanmar_tz = pytz.timezone('Asia/Yangon')
+    now = datetime.now(myanmar_tz)
     return f"{now.strftime('%d/%m/%Y')} {get_time_segment()}"
 
 # Commands
@@ -100,225 +104,93 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("⚠️ မက်ဆေ့ဂျ်မရှိပါ")
             return
 
-        entries = text.split()
+        # Normalize input
+        text = (text.replace(',', ' ')
+                  .replace('က', '-')
+                  .replace('အကုန်', '/')
+                  .replace(' ', '/'))
+        
+        entries = text.split('/')
         added = 0
         bets = []
+        errors = []
+        valid_entries = []
 
         if user.username not in user_data:
             user_data[user.username] = {}
         if key not in user_data[user.username]:
             user_data[user.username][key] = []
 
-        # ========== Multi-number format handling ==========
-        # ဂဏန်းအများကြီးနဲ့ ပမာဏတစ်ခု (12 25 36 15 48 69 50 25 36 40 400)
-        if len(entries) > 1 and entries[-1].isdigit():
-            amount = int(entries[-1])
-            numbers = []
-            
-            for token in entries[:-1]:
-                if token.isdigit() and 0 <= int(token) <= 99:
-                    numbers.append(int(token))
-            
-            if numbers and amount > 0:
-                for num in numbers:
-                    bets.append((num, amount))
-                i = len(entries)
-            else:
-                i = 0
-        # Reverse multi-number format (12 34 56r1000)
-        elif len(entries) > 1 and any('r' in token for token in entries):
-            # Find the last reverse token
-            reverse_token = None
-            for idx, token in enumerate(entries):
-                if 'r' in token:
-                    reverse_token = (idx, token)
-            
-            if reverse_token:
-                idx, token = reverse_token
-                parts = token.split('r')
-                if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
-                    amount = int(parts[1])
-                    numbers = []
-                    
-                    # Collect all numbers except the reverse token
-                    for j in range(len(entries)):
-                        if j != idx and entries[j].isdigit() and 0 <= int(entries[j]) <= 99:
-                            numbers.append(int(entries[j]))
-                    
-                    # Add the number from the reverse token
-                    numbers.append(int(parts[0]))
-                    
-                    if numbers and amount > 0:
-                        for num in numbers:
-                            bets.append((num, amount))
-                            bets.append((reverse_number(num), amount))
-                        i = len(entries)
-                    else:
-                        i = 0
-                else:
-                    i = 0
-            else:
-                i = 0
-        else:
-            i = 0
-
-        # Process individual tokens
+        i = 0
         while i < len(entries):
-            entry = entries[i]
+            entry = entries[i].strip()
             
-            # အထူးစနစ်များ (အပူး, ပါဝါ, နက္ခ, ညီကို, ကိုညီ)
-            fixed_special_cases = {
-                "အပူး": [0, 11, 22, 33, 44, 55, 66, 77, 88, 99],
-                "ပါဝါ": [5, 16, 27, 38, 49, 50, 61, 72, 83, 94],
-                "နက္ခ": [7, 18, 24, 35, 42, 53, 69, 70, 81, 96],
-                "ညီကို": [1, 12, 23, 34, 45, 56, 67, 78, 89, 90],
-                "ကိုညီ": [9, 10, 21, 32, 43, 54, 65, 76, 87, 98],
-            }
-            
-            # ပုံမှန်အထူးစနစ်များကို စီမံခြင်း
-            if entry in fixed_special_cases:
-                if i+1 < len(entries) and entries[i+1].isdigit():
-                    amt = int(entries[i+1])
-                    for num in fixed_special_cases[entry]:
-                        bets.append((num, amt))
-                    i += 2
-                    continue
-                else:
-                    i += 1
-                    continue
-            
-            # ထိပ်/ပိတ်/ဘရိတ်/အပါ စနစ်များအတွက်
-            dynamic_types = ["ထိပ်", "ပိတ်", "ဘရိတ်", "အပါ"]
-            found_dynamic = False
-            for dtype in dynamic_types:
-                if entry.endswith(dtype):
-                    prefix = entry[:-len(dtype)]
-                    if prefix.isdigit():
-                        digit_val = int(prefix)
-                        if 0 <= digit_val <= 9:
-                            # ဂဏန်းများကို ထုတ်ယူခြင်း
-                            if dtype == "ထိပ်":
-                                numbers = [digit_val * 10 + j for j in range(10)]
-                            elif dtype == "ပိတ်":
-                                numbers = [j * 10 + digit_val for j in range(10)]
-                            elif dtype == "ဘရိတ်":
-                                numbers = [n for n in range(100) if (n//10 + n%10) % 10 == digit_val]
-                            elif dtype == "အပါ":
-                                tens = [digit_val * 10 + j for j in range(10)]
-                                units = [j * 10 + digit_val for j in range(10)]
-                                numbers = list(set(tens + units))
-                            
-                            # ပမာဏထည့်သွင်းခြင်း
-                            if i+1 < len(entries) and entries[i+1].isdigit():
-                                amt = int(entries[i+1])
-                                for num in numbers:
-                                    bets.append((num, amt))
-                                i += 2
-                                found_dynamic = True
-                            else:
-                                i += 1
-                                found_dynamic = True
-                            break
-            if found_dynamic:
+            if not entry:
+                i += 1
                 continue
-            
-            # အခွေစနစ်များ
-            if entry.endswith('အခွေ') or entry.endswith('အပူးပါအခွေ'):
-                base = entry[:-3] if entry.endswith('အခွေ') else entry[:-8]
-                if base.isdigit():
-                    digits = [int(d) for d in base]
-                    pairs = []
-                    # ပုံမှန်အတွဲများ
-                    for j in range(len(digits)):
-                        for k in range(len(digits)):
-                            if j != k:
-                                combo = digits[j] * 10 + digits[k]
-                                if combo not in pairs:
-                                    pairs.append(combo)
-                    # အပူးပါအခွေအတွက် နှစ်ခါပါဂဏန်းများ
-                    if entry.endswith('အပူးပါအခွေ'):
-                        for d in digits:
-                            double = d * 10 + d
-                            if double not in pairs:
-                                pairs.append(double)
-                    if i+1 < len(entries) and entries[i+1].isdigit():
-                        amt = int(entries[i+1])
-                        for num in pairs:
-                            bets.append((num, amt))
-                        i += 2
-                        continue
-                    else:
-                        i += 1
-                        continue
-                else:
-                    i += 1
-                    continue
-            
-            # r ပါသောပုံစံများ
-            if 'r' in entry:
-                parts = entry.split('r')
-                if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
-                    num = int(parts[0])
-                    amt = int(parts[1])
-                    rev = reverse_number(num)
-                    bets.append((num, amt))
-                    bets.append((rev, amt))
-                    i += 1
-                    continue
-                else:
-                    i += 1
-                    continue
-            
-            # ပုံမှန်ဂဏန်းများ
+                
+            # Check for number-amount format
             if '-' in entry:
                 parts = entry.split('-')
                 if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
                     num = int(parts[0])
                     amt = int(parts[1])
-                    bets.append((num, amt))
+                    if 0 <= num <= 99:
+                        if amt > 0:
+                            bets.append((num, amt))
+                            valid_entries.append(f"{num}-{amt}")
+                            i += 1
+                            continue
+                        else:
+                            errors.append(f"'{entry}' - ပမာဏသည် 0 ထက်ကြီးရပါမယ်")
+                            i += 1
+                            continue
+                    else:
+                        errors.append(f"'{parts[0]}' - 0 နဲ့ 99 ကြားဖြစ်ရပါမယ်")
+                        i += 1
+                        continue
+                else:
+                    errors.append(f"'{entry}' - မှားနေသောပုံစံ (ဥပမာ: 12-1000)")
+                    i += 1
+                    continue
+            
+            # Check for single number
+            if entry.isdigit():
+                num = int(entry)
+                if 0 <= num <= 99:
+                    bets.append((num, 500))
+                    valid_entries.append(f"{num}-500")
                     i += 1
                     continue
                 else:
+                    errors.append(f"'{entry}' - 0 နဲ့ 99 ကြားဖြစ်ရပါမယ်")
                     i += 1
                     continue
             
-            # ဂဏန်းအုပ်စုများ
-            if entry.isdigit():
-                num = int(entry)
-                # r ပါသော ပမာဏကို စစ်ဆေးခြင်း
-                if i+1 < len(entries) and 'r' in entries[i+1]:
-                    r_parts = entries[i+1].split('r')
-                    if len(r_parts) == 2 and r_parts[0].isdigit() and r_parts[1].isdigit():
-                        amt1 = int(r_parts[0])
-                        amt2 = int(r_parts[1])
-                        rev = reverse_number(num)
-                        bets.append((num, amt1))
-                        bets.append((rev, amt2))
-                        i += 2
-                        continue
-                # ပုံမှန်ပမာဏ
-                if i+1 < len(entries) and entries[i+1].isdigit():
-                    amt = int(entries[i+1])
-                    bets.append((num, amt))
-                    i += 2
-                    continue
-                # ပမာဏမပါသော ဂဏန်းများ
-                bets.append((num, 500))
-                i += 1
-                continue
-            
-            # မညီမညာဖြစ်သောအချက်အလက်များကို skip လုပ်ခြင်း
+            # Invalid format
+            errors.append(f"'{entry}' - နားမလည်သောပုံစံ")
             i += 1
 
-        # စာရင်းသွင်းခြင်းနှင့် စုစုပေါင်းတွက်ချက်ခြင်း
+        # Process valid bets
         for (num, amt) in bets:
-            if 0 <= num <= 99:
-                ledger[num] = ledger.get(num, 0) + amt
-                user_data[user.username][key].append((num, amt))
-                added += amt
+            ledger[num] = ledger.get(num, 0) + amt
+            user_data[user.username][key].append((num, amt))
+            added += amt
 
-        if added > 0:
-            await update.message.reply_text(f"✅ {added} လို")
+        # Prepare response
+        response = []
+        if valid_entries:
+            response.append("✅ အောက်ပါအတိုင်းလောင်းပြီးပါပြီ:")
+            response.extend(valid_entries)
+            response.append(f"စုစုပေါင်း: {added} လို")
+        
+        if errors:
+            response.append("\n⚠️ အောက်ပါအချက်များမှားယွင်းနေပါသည်:")
+            response.extend(errors)
+            response.append("\nဥပမာမှန်များ:\n12-1000\n45/500\n78 1000\n12 34 56 1000")
+
+        if response:
+            await update.message.reply_text("\n".join(response))
         else:
             await update.message.reply_text("⚠️ အချက်အလက်များကိုစစ်ဆေးပါ")
             
@@ -400,7 +272,7 @@ async def pnumber(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         num = int(context.args[0])
         if num < 0 or num > 99:
-            await update.message.reply_text("⚠️ ဂဏန်းကို 0 နှင့် 99 ကြားထည့်ပါ")
+            await update.message.reply_text("⚠️ ဂဏန်းကို 0 နဲ့ 99 ကြားထည့်ပါ")
             return
             
         pnumber_value = num
@@ -456,7 +328,6 @@ async def comza_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user = context.user_data.get('selected_user')
         if not user:
-            # No selected user, process as normal bet
             await handle_message(update, context)
             return
             
