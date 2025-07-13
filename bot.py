@@ -303,7 +303,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     i += 2
                     continue
                 # ပမာဏမပါသော ဂဏန်းများ
-                bets.append((num,amt))
+                bets.append((num,0))
                 i += 1
                 continue
             
