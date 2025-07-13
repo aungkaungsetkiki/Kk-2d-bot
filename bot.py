@@ -278,14 +278,22 @@ async def delete_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = int(user_id_str)
         message_id = int(message_id_str)
         
-        if query.from_user.id != admin_id and query.from_user.id != user_id:
-            await query.edit_message_text("❌ သင်ဒီအရာကိုဖျက်ခွင့်မရှိပါ")
-            return
-        
         if query.from_user.id != admin_id:
-            await query.edit_message_text("❌ User များမဖျက်နိုင်ပါ၊ Admin ကိုဆက်သွယ်ပါ")
+            # For regular users, show message and restore original message with delete button
+            if (user_id, message_id) in message_store:
+                sent_message_id, bets, total_amount = message_store[(user_id, message_id)]
+                response = "\n".join(bets) + f"\nစုစုပေါင်း {total_amount} ကျပ်"
+                keyboard = [[InlineKeyboardButton("🗑 Delete", callback_data=f"delete:{user_id}:{message_id}")]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await query.edit_message_text(
+                    text=f"❌ User များမဖျက်နိုင်ပါ၊ Admin ကိုဆက်သွယ်ပါ\n\n{response}",
+                    reply_markup=reply_markup
+                )
+            else:
+                await query.edit_message_text("❌ User များမဖျက်နိုင်ပါ၊ Admin ကိုဆက်သွယ်ပါ")
             return
         
+        # For admin, show confirmation
         keyboard = [
             [InlineKeyboardButton("✅ OK", callback_data=f"confirm_delete:{user_id}:{message_id}")],
             [InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_delete:{user_id}:{message_id}")]
