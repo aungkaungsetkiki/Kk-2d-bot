@@ -26,6 +26,7 @@ com_data = {}
 pnumber_value = None
 date_control = {}
 overbuy_list = {}
+message_store = {}
 
 def reverse_number(n):
     s = str(n).zfill(2)
@@ -85,7 +86,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("⚠️ မက်ဆေ့ဂျ်မရှိပါ")
             return
 
-        # Check for invalid characters
         if any(c in text for c in ['%', '&', '*', '$']):
             await update.message.reply_text("⚠️ မှားနေပါတယ်\nအထူးသင်္ကေတများ (%&*$) မပါရပါ\nဥပမာ: 12-500")
             return
@@ -98,7 +98,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         while i < len(entries):
             entry = entries[i]
             
-            # Case 1: Simple number-amount (12-1000)
             if '-' in entry and 'r' not in entry:
                 parts = entry.split('-')
                 if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
@@ -110,7 +109,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         i += 1
                         continue
             
-            # Case 2: Reverse format (12r1000)
             if 'r' in entry and '-' not in entry:
                 parts = entry.split('r')
                 if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
@@ -124,7 +122,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         i += 1
                         continue
             
-            # Case 3: Combined format (23-1000r500)
             if 'r' in entry and '-' in entry:
                 main_part, r_part = entry.split('r', 1)
                 if '-' in main_part:
@@ -141,7 +138,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             i += 1
                             continue
             
-            # Case 4: Number followed by reverse (48 2000r1000)
             if entry.isdigit() and i+1 < len(entries) and 'r' in entries[i+1]:
                 num = int(entry)
                 r_part = entries[i+1]
@@ -158,13 +154,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             i += 2
                             continue
             
-            # Case 5: Group bets (123အခွေ1000)
             if 'အခွေ' in entry or 'အပူးပါအခွေ' in entry:
                 base = entry.replace('အခွေ', '').replace('အပူးပါ', '')
                 if base.isdigit() and len(base) >= 2:
                     digits = [int(d) for d in base]
                     pairs = []
-                    # Generate all unique 2-digit combinations
                     for j in range(len(digits)):
                         for k in range(len(digits)):
                             if j != k:
@@ -172,7 +166,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 if combo not in pairs:
                                     pairs.append(combo)
                     
-                    # Add doubles if အပူးပါအခွေ
                     if 'အပူးပါအခွေ' in entry:
                         for d in digits:
                             double = d * 10 + d
@@ -187,7 +180,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         i += 2
                         continue
             
-            # Case 6: Special combinations (အပူး, ပါဝါ, etc.)
             fixed_special_cases = {
                 "အပူး": [0, 11, 22, 33, 44, 55, 66, 77, 88, 99],
                 "ပါဝါ": [5, 16, 27, 38, 49, 50, 61, 72, 83, 94],
@@ -205,7 +197,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     i += 2
                     continue
             
-            # Case 7: Position-based bets (ထိပ်, ပိတ်, etc.)
             dynamic_types = ["ထိပ်", "ပိတ်", "ဘရိတ်", "အပါ"]
             found_dynamic = False
             for dtype in dynamic_types:
@@ -237,26 +228,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if found_dynamic:
                 continue
             
-            # Case 8: Simple number with default amount (12)
             if entry.isdigit():
                 num = int(entry)
                 if 0 <= num <= 99:
-                    # Check if next entry is a number (amount)
                     if i+1 < len(entries) and entries[i+1].isdigit():
                         amt = int(entries[i+1])
                         bets.append(f"{num:02d}-{amt}")
                         total_amount += amt
                         i += 2
                     else:
-                        # Default amount if not specified
                         bets.append(f"{num:02d}-500")
                         total_amount += 500
                         i += 1
                     continue
             
-            i += 1  # Skip unrecognized entries
+            i += 1
 
-        # Store the bets
         if user.username not in user_data:
             user_data[user.username] = {}
         if key not in user_data[user.username]:
@@ -269,10 +256,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ledger[num] = ledger.get(num, 0) + amt
             user_data[user.username][key].append((num, amt))
 
-        # Send confirmation
         if bets:
             response = "\n".join(bets) + f"\nစုစုပေါင်း {total_amount} ကျပ်"
-            await update.message.reply_text(response)
+            keyboard = [[InlineKeyboardButton("🗑 Delete", callback_data=f"delete:{user.id}:{update.message.message_id}")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            sent_message = await update.message.reply_text(response, reply_markup=reply_markup)
+            message_store[(user.id, update.message.message_id)] = (sent_message.message_id, bets, total_amount)
         else:
             await update.message.reply_text("⚠️ အချက်အလက်များကိုစစ်ဆေးပါ")
             
@@ -280,7 +269,116 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error in handle_message: {str(e)}")
         await update.message.reply_text(f"❌ Error: {str(e)}")
 
-# [Rest of the code remains exactly the same - all other functions unchanged]
+async def delete_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    try:
+        _, user_id_str, message_id_str = query.data.split(':')
+        user_id = int(user_id_str)
+        message_id = int(message_id_str)
+        
+        if query.from_user.id != admin_id and query.from_user.id != user_id:
+            await query.edit_message_text("❌ သင်ဒီအရာကိုဖျက်ခွင့်မရှိပါ")
+            return
+        
+        if query.from_user.id != admin_id:
+            await query.edit_message_text("❌ User များမဖျက်နိုင်ပါ၊ Admin ကိုဆက်သွယ်ပါ")
+            return
+        
+        keyboard = [
+            [InlineKeyboardButton("✅ OK", callback_data=f"confirm_delete:{user_id}:{message_id}")],
+            [InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_delete:{user_id}:{message_id}")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text("⚠️ သေချာလား? ဒီလောင်းကြေးကိုဖျက်မှာလား?", reply_markup=reply_markup)
+        
+    except Exception as e:
+        logger.error(f"Error in delete_bet: {str(e)}")
+        await query.edit_message_text("❌ Error occurred while processing deletion")
+
+async def confirm_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    try:
+        _, user_id_str, message_id_str = query.data.split(':')
+        user_id = int(user_id_str)
+        message_id = int(message_id_str)
+        
+        if (user_id, message_id) not in message_store:
+            await query.edit_message_text("❌ ဒေတာမတွေ့ပါ")
+            return
+            
+        sent_message_id, bets, total_amount = message_store[(user_id, message_id)]
+        key = get_current_date_key()
+        
+        username = None
+        for uname, data in user_data.items():
+            if key in data:
+                for bet in data[key]:
+                    num, amt = bet
+                    if f"{num:02d}-{amt}" in bets:
+                        username = uname
+                        break
+                if username:
+                    break
+        
+        if not username:
+            await query.edit_message_text("❌ User မတွေ့ပါ")
+            return
+        
+        for bet in bets:
+            num, amt = bet.split('-')
+            num = int(num)
+            amt = int(amt)
+            
+            if num in ledger:
+                ledger[num] -= amt
+                if ledger[num] <= 0:
+                    del ledger[num]
+            
+            if username in user_data and key in user_data[username]:
+                user_data[username][key] = [
+                    (n, a) for n, a in user_data[username][key] 
+                    if not (n == num and a == amt)
+                ]
+                
+                if not user_data[username][key]:
+                    del user_data[username][key]
+                    if not user_data[username]:
+                        del user_data[username]
+        
+        del message_store[(user_id, message_id)]
+        
+        await query.edit_message_text("✅ လောင်းကြေးဖျက်ပြီးပါပြီ")
+        
+    except Exception as e:
+        logger.error(f"Error in confirm_delete: {str(e)}")
+        await query.edit_message_text("❌ Error occurred while deleting bet")
+
+async def cancel_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    try:
+        _, user_id_str, message_id_str = query.data.split(':')
+        user_id = int(user_id_str)
+        message_id = int(message_id_str)
+        
+        if (user_id, message_id) in message_store:
+            sent_message_id, bets, total_amount = message_store[(user_id, message_id)]
+            response = "\n".join(bets) + f"\nစုစုပေါင်း {total_amount} ကျပ်"
+            keyboard = [[InlineKeyboardButton("🗑 Delete", callback_data=f"delete:{user_id}:{message_id}")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(response, reply_markup=reply_markup)
+        else:
+            await query.edit_message_text("ℹ️ ဖျက်ခြင်းကိုပယ်ဖျက်လိုက်ပါပြီ")
+            
+    except Exception as e:
+        logger.error(f"Error in cancel_delete: {str(e)}")
+        await query.edit_message_text("❌ Error occurred while canceling deletion")
+
 async def ledger_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         lines = ["📒 လက်ကျန်ငွေစာရင်း"]
@@ -490,9 +588,7 @@ async def total(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg.append(user_report)
             total_net += net
 
-        # Grand total
-        grand_status = "ဒိုင်အရှုံး" if total_net < 0 else "ဒိုင်အမြတ်"
-        msg.append(f"\n📊 စုစုပေါင်းရလဒ်: {abs(total_net)} ({grand_status})")
+        msg.append(f"\n📊 စုစုပေါင်းရလဒ်: {abs(total_net)} ({'ဒိုင်အရှုံး' if total_net < 0 else 'ဒိုင်အမြတ်'})")
 
         if msg:
             await update.message.reply_text("\n".join(msg))
@@ -575,7 +671,6 @@ if __name__ == "__main__":
         
     app = ApplicationBuilder().token(TOKEN).build()
 
-    # Command handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("dateopen", dateopen))
     app.add_handler(CommandHandler("dateclose", dateclose))
@@ -589,8 +684,10 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("alldata", alldata))
     app.add_handler(CommandHandler("reset", reset_data))
 
-    # Callback and message handlers
     app.add_handler(CallbackQueryHandler(comza_input, pattern=r"^comza:"))
+    app.add_handler(CallbackQueryHandler(delete_bet, pattern=r"^delete:"))
+    app.add_handler(CallbackQueryHandler(confirm_delete, pattern=r"^confirm_delete:"))
+    app.add_handler(CallbackQueryHandler(cancel_delete, pattern=r"^cancel_delete:"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, comza_text))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
