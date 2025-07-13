@@ -110,6 +110,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_data[user.username][key] = []
 
         # ========== Multi-number format handling ==========
+        # ဂဏန်းအများကြီးနဲ့ ပမာဏတစ်ခု (12 25 36 15 48 69 50 25 36 40 400)
         if len(entries) > 1 and entries[-1].isdigit():
             amount = int(entries[-1])
             numbers = []
@@ -124,7 +125,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 i = len(entries)
             else:
                 i = 0
+        # Reverse multi-number format (12 34 56r1000)
         elif len(entries) > 1 and any('r' in token for token in entries):
+            # Find the last reverse token
             reverse_token = None
             for idx, token in enumerate(entries):
                 if 'r' in token:
@@ -137,10 +140,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     amount = int(parts[1])
                     numbers = []
                     
+                    # Collect all numbers except the reverse token
                     for j in range(len(entries)):
                         if j != idx and entries[j].isdigit() and 0 <= int(entries[j]) <= 99:
                             numbers.append(int(entries[j]))
                     
+                    # Add the number from the reverse token
                     numbers.append(int(parts[0]))
                     
                     if numbers and amount > 0:
@@ -297,7 +302,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     bets.append((num, amt))
                     i += 2
                     continue
-                # ပမာဏမပါသော ဂဏန်းများ (ဤနေရာတွင် default 500 ကိုဖယ်ထားသည်)
+                # ပမာဏမပါသော ဂဏန်းများ
+                bets.append((num,amt))
                 i += 1
                 continue
             
@@ -491,7 +497,7 @@ async def total(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
             
         if pnumber_value is None:
-            await update.message.reply_text("ℹ️ ကျေးဇူးပြု၍ /pnumber ဖြင့် power number သတ်မှတ်ပါ")
+            await update.message.reply_text("ℹ️ ကျေးဇူးပြု၍ /pnumber 15")
             return
             
         msg = []
