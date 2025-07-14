@@ -6,6 +6,7 @@ from telegram.ext import (
     CallbackQueryHandler, ContextTypes, filters
 )
 from datetime import datetime, time
+import pytz
 
 # Environment variable
 TOKEN = os.getenv("BOT_TOKEN")
@@ -16,6 +17,9 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+# Timezone setup
+MYANMAR_TIMEZONE = pytz.timezone('Asia/Yangon')
 
 # Globals
 admin_id = None
@@ -33,11 +37,11 @@ def reverse_number(n):
     return int(s[::-1])
 
 def get_time_segment():
-    now = datetime.now().time()
+    now = datetime.now(MYANMAR_TIMEZONE).time()
     return "AM" if now < time(12, 0) else "PM"
 
 def get_current_date_key():
-    now = datetime.now()
+    now = datetime.now(MYANMAR_TIMEZONE)
     return f"{now.strftime('%d/%m/%Y')} {get_time_segment()}"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -97,6 +101,41 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         i = 0
         while i < len(entries):
             entry = entries[i]
+            
+            # Handle space-separated numbers with single amount (12 34 35 1000)
+            if (i + 3 < len(entries) and all(e.isdigit() for e in entries[i:i+4]):
+                num1 = int(entries[i])
+                num2 = int(entries[i+1])
+                num3 = int(entries[i+2])
+                amt = int(entries[i+3])
+                
+                if all(0 <= n <= 99 for n in [num1, num2, num3]):
+                    bets.append(f"{num1:02d}-{amt}")
+                    bets.append(f"{num2:02d}-{amt}")
+                    bets.append(f"{num3:02d}-{amt}")
+                    total_amount += amt * 3
+                    i += 4
+                    continue
+            
+            # Handle slash-separated numbers with single amount (45/56/78/1000)
+            if '/' in entry and entry.count('/') >= 2 and i + 1 < len(entries) and entries[i+1].isdigit():
+                numbers = entry.split('/')
+                if all(n.isdigit() for n in numbers[:-1]) and len(numbers) >= 3:
+                    amt = int(entries[i+1])
+                    valid = True
+                    for num_str in numbers[:-1]:
+                        num = int(num_str)
+                        if num < 0 or num > 99:
+                            valid = False
+                            break
+                    
+                    if valid:
+                        for num_str in numbers[:-1]:
+                            num = int(num_str)
+                            bets.append(f"{num:02d}-{amt}")
+                            total_amount += amt
+                        i += 2
+                        continue
             
             if '-' in entry and 'r' not in entry:
                 parts = entry.split('-')
