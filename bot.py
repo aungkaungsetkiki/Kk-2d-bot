@@ -102,43 +102,35 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         while i < len(entries):
             entry = entries[i]
             
-            # Handle space-separated numbers with single amount (12 34 35 1000)
-            if i + 3 < len(entries):
-                if (entries[i].isdigit() and entries[i+1].isdigit() and 
-                    entries[i+2].isdigit() and entries[i+3].isdigit()):
+            # Handle space-separated numbers with amount (12 34 500)
+            if i + 2 < len(entries):
+                if (entries[i].isdigit() and entries[i+1].isdigit() and entries[i+2].isdigit()):
                     num1 = int(entries[i])
                     num2 = int(entries[i+1])
-                    num3 = int(entries[i+2])
-                    amt = int(entries[i+3])
+                    amt = int(entries[i+2])
                     
-                    if all(0 <= n <= 99 for n in [num1, num2, num3]):
+                    if 0 <= num1 <= 99 and 0 <= num2 <= 99:
                         bets.append(f"{num1:02d}-{amt}")
                         bets.append(f"{num2:02d}-{amt}")
-                        bets.append(f"{num3:02d}-{amt}")
-                        total_amount += amt * 3
-                        i += 4
+                        total_amount += amt * 2
+                        i += 3
                         continue
             
-            # Handle slash-separated numbers with single amount (45/56/78/1000)
-            if '/' in entry and entry.count('/') >= 2 and i + 1 < len(entries) and entries[i+1].isdigit():
-                numbers = entry.split('/')
-                if all(n.isdigit() for n in numbers):
-                    amt = int(entries[i+1])
-                    valid = True
-                    for num_str in numbers:
+            # Handle slash-separated numbers with amount (12/34/56/500)
+            if '/' in entry:
+                parts = entry.split('/')
+                if len(parts) >= 3 and all(p.isdigit() for p in parts):
+                    # Last number is the amount
+                    amt = int(parts[-1])
+                    for num_str in parts[:-1]:
                         num = int(num_str)
-                        if num < 0 or num > 99:
-                            valid = False
-                            break
-                    
-                    if valid:
-                        for num_str in numbers:
-                            num = int(num_str)
+                        if 0 <= num <= 99:
                             bets.append(f"{num:02d}-{amt}")
                             total_amount += amt
-                        i += 2
-                        continue
+                    i += 1
+                    continue
             
+            # Original handling for other formats
             if '-' in entry and 'r' not in entry:
                 parts = entry.split('-')
                 if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
@@ -310,7 +302,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error in handle_message: {str(e)}")
         await update.message.reply_text(f"❌ Error: {str(e)}")
 
-
 async def delete_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -321,7 +312,6 @@ async def delete_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message_id = int(message_id_str)
         
         if query.from_user.id != admin_id:
-            # For regular users, show message and restore original message with delete button
             if (user_id, message_id) in message_store:
                 sent_message_id, bets, total_amount = message_store[(user_id, message_id)]
                 response = "\n".join(bets) + f"\nစုစုပေါင်း {total_amount} ကျပ်"
@@ -335,7 +325,6 @@ async def delete_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.edit_message_text("❌ User များမဖျက်နိုင်ပါ၊ Admin ကိုဆက်သွယ်ပါ")
             return
         
-        # For admin, show confirmation
         keyboard = [
             [InlineKeyboardButton("✅ OK", callback_data=f"confirm_delete:{user_id}:{message_id}")],
             [InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_delete:{user_id}:{message_id}")]
@@ -714,7 +703,6 @@ async def reset_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Error in reset_data: {str(e)}")
         await update.message.reply_text(f"❌ Error: {str(e)}")
-
 
 if __name__ == "__main__":
     if not TOKEN:
