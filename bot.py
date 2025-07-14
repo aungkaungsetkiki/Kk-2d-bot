@@ -103,34 +103,36 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             entry = entries[i]
             
             # Handle space-separated numbers with single amount (12 34 35 1000)
-            if (i + 3 < len(entries) and all(e.isdigit() for e in entries[i:i+4]):
-                num1 = int(entries[i])
-                num2 = int(entries[i+1])
-                num3 = int(entries[i+2])
-                amt = int(entries[i+3])
-                
-                if all(0 <= n <= 99 for n in [num1, num2, num3]):
-                    bets.append(f"{num1:02d}-{amt}")
-                    bets.append(f"{num2:02d}-{amt}")
-                    bets.append(f"{num3:02d}-{amt}")
-                    total_amount += amt * 3
-                    i += 4
-                    continue
+            if i + 3 < len(entries):
+                if (entries[i].isdigit() and entries[i+1].isdigit() and 
+                    entries[i+2].isdigit() and entries[i+3].isdigit()):
+                    num1 = int(entries[i])
+                    num2 = int(entries[i+1])
+                    num3 = int(entries[i+2])
+                    amt = int(entries[i+3])
+                    
+                    if all(0 <= n <= 99 for n in [num1, num2, num3]):
+                        bets.append(f"{num1:02d}-{amt}")
+                        bets.append(f"{num2:02d}-{amt}")
+                        bets.append(f"{num3:02d}-{amt}")
+                        total_amount += amt * 3
+                        i += 4
+                        continue
             
             # Handle slash-separated numbers with single amount (45/56/78/1000)
             if '/' in entry and entry.count('/') >= 2 and i + 1 < len(entries) and entries[i+1].isdigit():
                 numbers = entry.split('/')
-                if all(n.isdigit() for n in numbers[:-1]) and len(numbers) >= 3:
+                if all(n.isdigit() for n in numbers):
                     amt = int(entries[i+1])
                     valid = True
-                    for num_str in numbers[:-1]:
+                    for num_str in numbers:
                         num = int(num_str)
                         if num < 0 or num > 99:
                             valid = False
                             break
                     
                     if valid:
-                        for num_str in numbers[:-1]:
+                        for num_str in numbers:
                             num = int(num_str)
                             bets.append(f"{num:02d}-{amt}")
                             total_amount += amt
@@ -307,6 +309,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Error in handle_message: {str(e)}")
         await update.message.reply_text(f"❌ Error: {str(e)}")
+
 
 async def delete_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -711,6 +714,7 @@ async def reset_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Error in reset_data: {str(e)}")
         await update.message.reply_text(f"❌ Error: {str(e)}")
+
 
 if __name__ == "__main__":
     if not TOKEN:
