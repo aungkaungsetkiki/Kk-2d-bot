@@ -31,6 +31,7 @@ pnumber_value = None
 date_control = {}
 overbuy_list = {}
 message_store = {}
+overbuy_selections = {}
 
 def reverse_number(n):
     s = str(n).zfill(2)
@@ -442,7 +443,7 @@ async def break_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
             
         if not context.args:
-            await update.message.reply_text("ℹ️ Usage: /break [limit]")
+            await update.message.reply_text("ℹ Usage: /break [limit]")
             return
             
         limit = int(context.args[0])
@@ -452,7 +453,7 @@ async def break_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 msg.append(f"{k:02d} ➤ {v - limit}")
         
         if len(msg) == 1:
-            await update.message.reply_text("ℹ️ ဘယ်ဂဏန်းမှ limit မကျော်ပါ")
+            await update.message.reply_text("ℹ ဘယ်ဂဏန်းမှ limit မကျော်ပါ")
         else:
             await update.message.reply_text("\n".join(msg))
     except (ValueError, IndexError):
@@ -469,15 +470,193 @@ async def overbuy(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
             
         if not context.args:
-            await update.message.reply_text("ℹ️ Usage: /overbuy [username]")
+            await update.message.reply_text("ℹ️ ကာဒိုင်အမည်ထည့်ပါ")
             return
             
-        user = context.args[0]
-        overbuy_list[user] = ledger.copy()
-        await update.message.reply_text(f"✅ {user} အတွက် overbuy စာရင်းပြထားပါတယ်")
+        username = context.args[0]
+        context.user_data['overbuy_username'] = username
+        
+        # Get numbers that exceed break limit
+        limit = 2000  # Default break limit
+        over_numbers = {num: amt - limit for num, amt in ledger.items() if amt > limit}
+        
+        if not over_numbers:
+            await update.message.reply_text("ℹ️ ဘယ်ဂဏန်းမှ limit မကျော်ပါ")
+            return
+            
+        overbuy_selections[username] = over_numbers.copy()
+        
+        # Create message with checkboxes
+        msg = [f"{username} ထံမှာတင်ရန်များ:"]
+        buttons = []
+        for num, amt in over_numbers.items():
+            buttons.append([InlineKeyboardButton(f"{num:02d} ➤ {amt} {'✅' if num in overbuy_selections[username] else '⬜'}", 
+                              callback_data=f"overbuy_select:{num}")])
+        
+        buttons.append([
+            InlineKeyboardButton("Select All", callback_data="overbuy_select_all"),
+            InlineKeyboardButton("Unselect All", callback_data="overbuy_unselect_all")
+        ])
+        buttons.append([InlineKeyboardButton("OK", callback_data="overbuy_confirm")])
+        
+        reply_markup = InlineKeyboardMarkup(buttons)
+        await update.message.reply_text("\n".join(msg), reply_markup=reply_markup)
+        
     except Exception as e:
         logger.error(f"Error in overbuy: {str(e)}")
         await update.message.reply_text(f"❌ Error: {str(e)}")
+
+async def overbuy_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    try:
+        _, num_str = query.data.split(':')
+        num = int(num_str)
+        username = context.user_data.get('overbuy_username')
+        
+        if username not in overbuy_selections:
+            await query.edit_message_text("❌ Error: User not found")
+            return
+            
+        if num in overbuy_selections[username]:
+            del overbuy_selections[username][num]
+        else:
+            # Get the original amount from ledger
+            limit = 2000  # Default break limit
+            overbuy_selections[username][num] = ledger[num] - limit
+            
+        # Update the message with new selections
+        msg = [f"{username} ထံမှာတင်ရန်များ:"]
+        buttons = []
+        for n, amt in overbuy_selections[username].items():
+            buttons.append([InlineKeyboardButton(f"{n:02d} ➤ {amt} {'✅' if n in overbuy_selections[username] else '⬜'}", 
+                              callback_data=f"overbuy_select:{n}")])
+        
+        buttons.append([
+            InlineKeyboardButton("Select All", callback_data="overbuy_select_all"),
+            InlineKeyboardButton("Unselect All", callback_data="overbuy_unselect_all")
+        ])
+        buttons.append([InlineKeyboardButton("OK", callback_data="overbuy_confirm")])
+        
+        reply_markup = InlineKeyboardMarkup(buttons)
+        await query.edit_message_text("\n".join(msg), reply_markup=reply_markup)
+        
+    except Exception as e:
+        logger.error(f"Error in overbuy_select: {str(e)}")
+        await query.edit_message_text("❌ Error occurred")
+
+async def overbuy_select_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    try:
+        username = context.user_data.get('overbuy_username')
+        if username not in overbuy_selections:
+            await query.edit_message_text("❌ Error: User not found")
+            return
+            
+        limit = 2000  # Default break limit
+        overbuy_selections[username] = {num: amt - limit for num, amt in ledger.items() if amt > limit}
+        
+        # Update the message
+        msg = [f"{username} ထံမှာတင်ရန်များ:"]
+        buttons = []
+        for num, amt in overbuy_selections[username].items():
+            buttons.append([InlineKeyboardButton(f"{num:02d} ➤ {amt} ✅", 
+                              callback_data=f"overbuy_select:{num}")])
+        
+        buttons.append([
+            InlineKeyboardButton("Select All", callback_data="overbuy_select_all"),
+            InlineKeyboardButton("Unselect All", callback_data="overbuy_unselect_all")
+        ])
+        buttons.append([InlineKeyboardButton("OK", callback_data="overbuy_confirm")])
+        
+        reply_markup = InlineKeyboardMarkup(buttons)
+        await query.edit_message_text("\n".join(msg), reply_markup=reply_markup)
+        
+    except Exception as e:
+        logger.error(f"Error in overbuy_select_all: {str(e)}")
+        await query.edit_message_text("❌ Error occurred")
+
+async def overbuy_unselect_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    try:
+        username = context.user_data.get('overbuy_username')
+        if username not in overbuy_selections:
+            await query.edit_message_text("❌ Error: User not found")
+            return
+            
+        overbuy_selections[username] = {}
+        
+        # Update the message
+        msg = [f"{username} ထံမှာတင်ရန်များ:"]
+        buttons = []
+        limit = 2000  # Default break limit
+        for num, amt in ledger.items():
+            if amt > limit:
+                buttons.append([InlineKeyboardButton(f"{num:02d} ➤ {amt - limit} ⬜", 
+                                  callback_data=f"overbuy_select:{num}")])
+        
+        buttons.append([
+            InlineKeyboardButton("Select All", callback_data="overbuy_select_all"),
+            InlineKeyboardButton("Unselect All", callback_data="overbuy_unselect_all")
+        ])
+        buttons.append([InlineKeyboardButton("OK", callback_data="overbuy_confirm")])
+        
+        reply_markup = InlineKeyboardMarkup(buttons)
+        await query.edit_message_text("\n".join(msg), reply_markup=reply_markup)
+        
+    except Exception as e:
+        logger.error(f"Error in overbuy_unselect_all: {str(e)}")
+        await query.edit_message_text("❌ Error occurred")
+
+async def overbuy_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    try:
+        username = context.user_data.get('overbuy_username')
+        if username not in overbuy_selections:
+            await query.edit_message_text("❌ Error: User not found")
+            return
+            
+        selected_numbers = overbuy_selections[username]
+        if not selected_numbers:
+            await query.edit_message_text("⚠️ ဘာဂဏန်းမှမရွေးထားပါ")
+            return
+            
+        # Add to user_data with negative amounts
+        key = get_current_date_key()
+        if username not in user_data:
+            user_data[username] = {}
+        if key not in user_data[username]:
+            user_data[username][key] = []
+            
+        total_amount = 0
+        bets = []
+        for num, amt in selected_numbers.items():
+            user_data[username][key].append((num, -amt))
+            bets.append(f"{num:02d}-{amt}")
+            total_amount += amt
+            
+            # Update ledger
+            ledger[num] = ledger.get(num, 0) - amt
+            if ledger[num] <= 0:
+                del ledger[num]
+        
+        # Save to overbuy_list
+        overbuy_list[username] = selected_numbers.copy()
+        
+        # Show confirmation
+        response = f"{username}\n" + "\n".join(bets) + f"\nစုစုပေါင်း {total_amount} ကျပ်"
+        await query.edit_message_text(response)
+        
+    except Exception as e:
+        logger.error(f"Error in overbuy_confirm: {str(e)}")
+        await query.edit_message_text("❌ Error occurred")
 
 async def pnumber(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global admin_id, pnumber_value
@@ -686,7 +865,7 @@ async def alldata(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Error: {str(e)}")
 
 async def reset_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global admin_id, user_data, ledger, za_data, com_data, date_control, overbuy_list
+    global admin_id, user_data, ledger, za_data, com_data, date_control, overbuy_list, overbuy_selections
     try:
         if update.effective_user.id != admin_id:
             await update.message.reply_text("❌ Admin only command")
@@ -698,6 +877,7 @@ async def reset_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
         com_data = {}
         date_control = {}
         overbuy_list = {}
+        overbuy_selections = {}
         
         await update.message.reply_text("✅ ဒေတာများအားလုံးကို ပြန်လည်သုတ်သင်ပြီးပါပြီ")
     except Exception as e:
@@ -727,6 +907,10 @@ if __name__ == "__main__":
     app.add_handler(CallbackQueryHandler(delete_bet, pattern=r"^delete:"))
     app.add_handler(CallbackQueryHandler(confirm_delete, pattern=r"^confirm_delete:"))
     app.add_handler(CallbackQueryHandler(cancel_delete, pattern=r"^cancel_delete:"))
+    app.add_handler(CallbackQueryHandler(overbuy_select, pattern=r"^overbuy_select:"))
+    app.add_handler(CallbackQueryHandler(overbuy_select_all, pattern=r"^overbuy_select_all$"))
+    app.add_handler(CallbackQueryHandler(overbuy_unselect_all, pattern=r"^overbuy_unselect_all$"))
+    app.add_handler(CallbackQueryHandler(overbuy_confirm, pattern=r"^overbuy_confirm$"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, comza_text))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
