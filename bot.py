@@ -32,6 +32,7 @@ date_control = {}
 overbuy_list = {}
 message_store = {}
 overbuy_selections = {}
+break_limit = None  # Changed from fixed 2000 to None initially
 
 def reverse_number(n):
     s = str(n).zfill(2)
@@ -436,34 +437,44 @@ async def ledger_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Error: {str(e)}")
 
 async def break_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global admin_id
+    global admin_id, break_limit
     try:
         if update.effective_user.id != admin_id:
             await update.message.reply_text("❌ Admin only command")
             return
             
         if not context.args:
-            await update.message.reply_text("ℹ Usage: /break [limit]")
+            if break_limit is None:
+                await update.message.reply_text("ℹ️ Usage: /break [limit]\nℹ️ လက်ရှိတွင် break limit မသတ်မှတ်ရသေးပါ")
+            else:
+                await update.message.reply_text(f"ℹ️ Usage: /break [limit]\nℹ️ လက်ရှိ break limit: {break_limit}")
             return
             
-        limit = int(context.args[0])
-        msg = ["📌 Limit ကျော်ဂဏန်းများ:"]
-        for k, v in ledger.items():
-            if v > limit:
-                msg.append(f"{k:02d} ➤ {v - limit}")
-        
-        if len(msg) == 1:
-            await update.message.reply_text("ℹ ဘယ်ဂဏန်းမှ limit မကျော်ပါ")
-        else:
-            await update.message.reply_text("\n".join(msg))
-    except (ValueError, IndexError):
-        await update.message.reply_text("⚠️ Limit amount ထည့်ပါ (ဥပမာ: /break 5000)")
+        try:
+            new_limit = int(context.args[0])
+            break_limit = new_limit
+            await update.message.reply_text(f"✅ Break limit ကို {break_limit} အဖြစ်သတ်မှတ်ပြီးပါပြီ")
+            
+            # Show numbers that exceed the new limit
+            msg = [f"📌 Limit ({break_limit}) ကျော်ဂဏန်းများ:"]
+            for k, v in ledger.items():
+                if v > break_limit:
+                    msg.append(f"{k:02d} ➤ {v - break_limit}")
+            
+            if len(msg) == 1:
+                await update.message.reply_text(f"ℹ️ ဘယ်ဂဏန်းမှ limit ({break_limit}) မကျော်ပါ")
+            else:
+                await update.message.reply_text("\n".join(msg))
+                
+        except ValueError:
+            await update.message.reply_text("⚠️ Limit amount ထည့်ပါ (ဥပမာ: /break 5000)")
+            
     except Exception as e:
         logger.error(f"Error in break: {str(e)}")
         await update.message.reply_text(f"❌ Error: {str(e)}")
 
 async def overbuy(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global admin_id
+    global admin_id, break_limit
     try:
         if update.effective_user.id != admin_id:
             await update.message.reply_text("❌ Admin only command")
@@ -473,25 +484,28 @@ async def overbuy(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("ℹ️ ကာဒိုင်အမည်ထည့်ပါ")
             return
             
+        if break_limit is None:
+            await update.message.reply_text("⚠️ ကျေးဇူးပြု၍ /break [limit] ဖြင့် limit သတ်မှတ်ပါ")
+            return
+            
         username = context.args[0]
         context.user_data['overbuy_username'] = username
         
         # Get numbers that exceed break limit
-        limit = 2000  # Default break limit
-        over_numbers = {num: amt - limit for num, amt in ledger.items() if amt > limit}
+        over_numbers = {num: amt - break_limit for num, amt in ledger.items() if amt > break_limit}
         
         if not over_numbers:
-            await update.message.reply_text("ℹ️ ဘယ်ဂဏန်းမှ limit မကျော်ပါ")
+            await update.message.reply_text(f"ℹ️ ဘယ်ဂဏန်းမှ limit ({break_limit}) မကျော်ပါ")
             return
             
         overbuy_selections[username] = over_numbers.copy()
         
         # Create message with checkboxes
-        msg = [f"{username} ထံမှာတင်ရန်များ:"]
+        msg = [f"{username} ထံမှာတင်ရန်များ (Limit: {break_limit}):"]
         buttons = []
         for num, amt in over_numbers.items():
             buttons.append([InlineKeyboardButton(f"{num:02d} ➤ {amt} {'✅' if num in overbuy_selections[username] else '⬜'}", 
-                              callback_data=f"overbuy_select:{num}")])
+                          callback_data=f"overbuy_select:{num}")])
         
         buttons.append([
             InlineKeyboardButton("Select All", callback_data="overbuy_select_all"),
@@ -523,15 +537,14 @@ async def overbuy_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
             del overbuy_selections[username][num]
         else:
             # Get the original amount from ledger
-            limit = 2000  # Default break limit
-            overbuy_selections[username][num] = ledger[num] - limit
+            overbuy_selections[username][num] = ledger[num] - break_limit
             
         # Update the message with new selections
-        msg = [f"{username} ထံမှာတင်ရန်များ:"]
+        msg = [f"{username} ထံမှာတင်ရန်များ (Limit: {break_limit}):"]
         buttons = []
         for n, amt in overbuy_selections[username].items():
             buttons.append([InlineKeyboardButton(f"{n:02d} ➤ {amt} {'✅' if n in overbuy_selections[username] else '⬜'}", 
-                              callback_data=f"overbuy_select:{n}")])
+                          callback_data=f"overbuy_select:{n}")])
         
         buttons.append([
             InlineKeyboardButton("Select All", callback_data="overbuy_select_all"),
@@ -556,15 +569,14 @@ async def overbuy_select_all(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await query.edit_message_text("❌ Error: User not found")
             return
             
-        limit = 2000  # Default break limit
-        overbuy_selections[username] = {num: amt - limit for num, amt in ledger.items() if amt > limit}
+        overbuy_selections[username] = {num: amt - break_limit for num, amt in ledger.items() if amt > break_limit}
         
         # Update the message
-        msg = [f"{username} ထံမှာတင်ရန်များ:"]
+        msg = [f"{username} ထံမှာတင်ရန်များ (Limit: {break_limit}):"]
         buttons = []
         for num, amt in overbuy_selections[username].items():
             buttons.append([InlineKeyboardButton(f"{num:02d} ➤ {amt} ✅", 
-                              callback_data=f"overbuy_select:{num}")])
+                          callback_data=f"overbuy_select:{num}")])
         
         buttons.append([
             InlineKeyboardButton("Select All", callback_data="overbuy_select_all"),
@@ -592,12 +604,11 @@ async def overbuy_unselect_all(update: Update, context: ContextTypes.DEFAULT_TYP
         overbuy_selections[username] = {}
         
         # Update the message
-        msg = [f"{username} ထံမှာတင်ရန်များ:"]
+        msg = [f"{username} ထံမှာတင်ရန်များ (Limit: {break_limit}):"]
         buttons = []
-        limit = 2000  # Default break limit
         for num, amt in ledger.items():
-            if amt > limit:
-                buttons.append([InlineKeyboardButton(f"{num:02d} ➤ {amt - limit} ⬜", 
+            if amt > break_limit:
+                buttons.append([InlineKeyboardButton(f"{num:02d} ➤ {amt - break_limit} ⬜", 
                                   callback_data=f"overbuy_select:{num}")])
         
         buttons.append([
@@ -865,7 +876,7 @@ async def alldata(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Error: {str(e)}")
 
 async def reset_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global admin_id, user_data, ledger, za_data, com_data, date_control, overbuy_list, overbuy_selections
+    global admin_id, user_data, ledger, za_data, com_data, date_control, overbuy_list, overbuy_selections, break_limit
     try:
         if update.effective_user.id != admin_id:
             await update.message.reply_text("❌ Admin only command")
@@ -878,6 +889,7 @@ async def reset_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
         date_control = {}
         overbuy_list = {}
         overbuy_selections = {}
+        break_limit = None  # Reset break limit as well
         
         await update.message.reply_text("✅ ဒေတာများအားလုံးကို ပြန်လည်သုတ်သင်ပြီးပါပြီ")
     except Exception as e:
