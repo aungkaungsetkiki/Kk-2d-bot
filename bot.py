@@ -917,7 +917,6 @@ async def posthis(update: Update, context: ContextTypes.DEFAULT_TYPE):
         is_admin = user.id == admin_id
         
         if is_admin and not context.args:
-            # Admin requesting user list
             if not user_data:
                 await update.message.reply_text("ℹ️ လက်ရှိ user မရှိပါ")
                 return
@@ -926,6 +925,7 @@ async def posthis(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(
                 "ဘယ် user ရဲ့စာရင်းကိုကြည့်မလဲ?",
                 reply_markup=InlineKeyboardMarkup(keyboard)
+            )
             return
         
         username = user.username if not is_admin else context.args[0] if context.args else None
