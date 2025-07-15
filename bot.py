@@ -1,6 +1,6 @@
 import os
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
     CallbackQueryHandler, ContextTypes, filters
@@ -32,7 +32,7 @@ date_control = {}
 overbuy_list = {}
 message_store = {}
 overbuy_selections = {}
-break_limit = None  # Changed from fixed 2000 to None initially
+break_limit = None
 
 def reverse_number(n):
     s = str(n).zfill(2)
@@ -46,11 +46,31 @@ def get_current_date_key():
     now = datetime.now(MYANMAR_TIMEZONE)
     return f"{now.strftime('%d/%m/%Y')} {get_time_segment()}"
 
+async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = []
+    if update.effective_user.id == admin_id:
+        keyboard = [
+            ["/dateopen", "/dateclose"],
+            ["/ledger", "/break"],
+            ["/overbuy", "/pnumber"],
+            ["/comandza", "/total"],
+            ["/tsent", "/alldata"],
+            ["/reset", "/posthis"]
+        ]
+    else:
+        keyboard = [
+            ["/posthis"]
+        ]
+    
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    await update.message.reply_text("မီနူးကိုရွေးချယ်ပါ", reply_markup=reply_markup)
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global admin_id
     admin_id = update.effective_user.id
     logger.info(f"Admin set to: {admin_id}")
     await update.message.reply_text("🤖 Bot started. Admin privileges granted!")
+    await show_menu(update, context)
 
 async def dateopen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global admin_id
@@ -104,7 +124,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         while i < len(entries):
             entry = entries[i]
             
-            # Handle space-separated numbers with amount (12 34 500)
             if i + 2 < len(entries):
                 if (entries[i].isdigit() and entries[i+1].isdigit() and entries[i+2].isdigit()):
                     num1 = int(entries[i])
@@ -118,11 +137,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         i += 3
                         continue
             
-            # Handle slash-separated numbers with amount (12/34/56/500)
             if '/' in entry:
                 parts = entry.split('/')
                 if len(parts) >= 3 and all(p.isdigit() for p in parts):
-                    # Last number is the amount
                     amt = int(parts[-1])
                     for num_str in parts[:-1]:
                         num = int(num_str)
@@ -132,7 +149,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     i += 1
                     continue
             
-            # Original handling for other formats
             if '-' in entry and 'r' not in entry:
                 parts = entry.split('-')
                 if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
@@ -421,16 +437,26 @@ async def cancel_delete(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ Error occurred while canceling deletion")
 
 async def ledger_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global admin_id
     try:
+        if update.effective_user.id != admin_id:
+            await update.message.reply_text("❌ Admin only command")
+            return
+            
         lines = ["📒 လက်ကျန်ငွေစာရင်း"]
         for i in range(100):
             total = ledger.get(i, 0)
             if total > 0:
-                lines.append(f"{i:02d} ➤ {total}")
+                if pnumber_value is not None and i == pnumber_value:
+                    lines.append(f"🔴 {i:02d} ➤ {total} 🔴")
+                else:
+                    lines.append(f"{i:02d} ➤ {total}")
         
         if len(lines) == 1:
             await update.message.reply_text("ℹ️ လက်ရှိတွင် လောင်းကြေးမရှိပါ")
         else:
+            if pnumber_value is not None:
+                lines.append(f"\n🔴 Power Number: {pnumber_value:02d} ➤ {ledger.get(pnumber_value, 0)}")
             await update.message.reply_text("\n".join(lines))
     except Exception as e:
         logger.error(f"Error in ledger: {str(e)}")
@@ -455,7 +481,6 @@ async def break_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             break_limit = new_limit
             await update.message.reply_text(f"✅ Break limit ကို {break_limit} အဖြစ်သတ်မှတ်ပြီးပါပြီ")
             
-            # Show numbers that exceed the new limit
             msg = [f"📌 Limit ({break_limit}) ကျော်ဂဏန်းများ:"]
             for k, v in ledger.items():
                 if v > break_limit:
@@ -491,7 +516,6 @@ async def overbuy(update: Update, context: ContextTypes.DEFAULT_TYPE):
         username = context.args[0]
         context.user_data['overbuy_username'] = username
         
-        # Get numbers that exceed break limit
         over_numbers = {num: amt - break_limit for num, amt in ledger.items() if amt > break_limit}
         
         if not over_numbers:
@@ -500,7 +524,6 @@ async def overbuy(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         overbuy_selections[username] = over_numbers.copy()
         
-        # Create message with checkboxes
         msg = [f"{username} ထံမှာတင်ရန်များ (Limit: {break_limit}):"]
         buttons = []
         for num, amt in over_numbers.items():
@@ -536,10 +559,8 @@ async def overbuy_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if num in overbuy_selections[username]:
             del overbuy_selections[username][num]
         else:
-            # Get the original amount from ledger
             overbuy_selections[username][num] = ledger[num] - break_limit
             
-        # Update the message with new selections
         msg = [f"{username} ထံမှာတင်ရန်များ (Limit: {break_limit}):"]
         buttons = []
         for n, amt in overbuy_selections[username].items():
@@ -571,7 +592,6 @@ async def overbuy_select_all(update: Update, context: ContextTypes.DEFAULT_TYPE)
             
         overbuy_selections[username] = {num: amt - break_limit for num, amt in ledger.items() if amt > break_limit}
         
-        # Update the message
         msg = [f"{username} ထံမှာတင်ရန်များ (Limit: {break_limit}):"]
         buttons = []
         for num, amt in overbuy_selections[username].items():
@@ -603,13 +623,12 @@ async def overbuy_unselect_all(update: Update, context: ContextTypes.DEFAULT_TYP
             
         overbuy_selections[username] = {}
         
-        # Update the message
         msg = [f"{username} ထံမှာတင်ရန်များ (Limit: {break_limit}):"]
         buttons = []
         for num, amt in ledger.items():
             if amt > break_limit:
                 buttons.append([InlineKeyboardButton(f"{num:02d} ➤ {amt - break_limit} ⬜", 
-                                  callback_data=f"overbuy_select:{num}")])
+                              callback_data=f"overbuy_select:{num}")])
         
         buttons.append([
             InlineKeyboardButton("Select All", callback_data="overbuy_select_all"),
@@ -639,7 +658,6 @@ async def overbuy_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("⚠️ ဘာဂဏန်းမှမရွေးထားပါ")
             return
             
-        # Add to user_data with negative amounts
         key = get_current_date_key()
         if username not in user_data:
             user_data[username] = {}
@@ -653,15 +671,12 @@ async def overbuy_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
             bets.append(f"{num:02d}-{amt}")
             total_amount += amt
             
-            # Update ledger
             ledger[num] = ledger.get(num, 0) - amt
             if ledger[num] <= 0:
                 del ledger[num]
         
-        # Save to overbuy_list
         overbuy_list[username] = selected_numbers.copy()
         
-        # Show confirmation
         response = f"{username}\n" + "\n".join(bets) + f"\nစုစုပေါင်း {total_amount} ကျပ်"
         await query.edit_message_text(response)
         
@@ -889,12 +904,98 @@ async def reset_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
         date_control = {}
         overbuy_list = {}
         overbuy_selections = {}
-        break_limit = None  # Reset break limit as well
+        break_limit = None
         
         await update.message.reply_text("✅ ဒေတာများအားလုံးကို ပြန်လည်သုတ်သင်ပြီးပါပြီ")
     except Exception as e:
         logger.error(f"Error in reset_data: {str(e)}")
         await update.message.reply_text(f"❌ Error: {str(e)}")
+
+async def posthis(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        user = update.effective_user
+        is_admin = user.id == admin_id
+        
+        if is_admin and not context.args:
+            # Admin requesting user list
+            if not user_data:
+                await update.message.reply_text("ℹ️ လက်ရှိ user မရှိပါ")
+                return
+                
+            keyboard = [[InlineKeyboardButton(u, callback_data=f"posthis:{u}")] for u in user_data.keys()]
+            await update.message.reply_text(
+                "ဘယ် user ရဲ့စာရင်းကိုကြည့်မလဲ?",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            return
+        
+        username = user.username if not is_admin else context.args[0] if context.args else None
+        
+        if not username:
+            await update.message.reply_text("❌ User မရှိပါ")
+            return
+            
+        if username not in user_data:
+            await update.message.reply_text(f"ℹ️ {username} အတွက် စာရင်းမရှိပါ")
+            return
+            
+        msg = [f"📊 {username} ရဲ့လောင်းကြေးမှတ်တမ်း"]
+        total_amount = 0
+        pnumber_total = 0
+        
+        for date_key in user_data[username]:
+            msg.append(f"\n📅 {date_key}:")
+            for num, amt in user_data[username][date_key]:
+                if pnumber_value is not None and num == pnumber_value:
+                    msg.append(f"🔴 {num:02d} ➤ {amt} 🔴")
+                    pnumber_total += amt
+                else:
+                    msg.append(f"{num:02d} ➤ {amt}")
+                total_amount += amt
+        
+        msg.append(f"\n💵 စုစုပေါင်း: {total_amount}")
+        
+        if pnumber_value is not None:
+            msg.append(f"🔴 Power Number ({pnumber_value:02d}) စုစုပေါင်း: {pnumber_total}")
+        
+        await update.message.reply_text("\n".join(msg))
+        
+    except Exception as e:
+        logger.error(f"Error in posthis: {str(e)}")
+        await update.message.reply_text(f"❌ Error: {str(e)}")
+
+async def posthis_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    try:
+        _, username = query.data.split(':')
+        msg = [f"📊 {username} ရဲ့လောင်းကြေးမှတ်တမ်း"]
+        total_amount = 0
+        pnumber_total = 0
+        
+        if username in user_data:
+            for date_key in user_data[username]:
+                msg.append(f"\n📅 {date_key}:")
+                for num, amt in user_data[username][date_key]:
+                    if pnumber_value is not None and num == pnumber_value:
+                        msg.append(f"🔴 {num:02d} ➤ {amt} 🔴")
+                        pnumber_total += amt
+                    else:
+                        msg.append(f"{num:02d} ➤ {amt}")
+                    total_amount += amt
+            
+            msg.append(f"\n💵 စုစုပေါင်း: {total_amount}")
+            
+            if pnumber_value is not None:
+                msg.append(f"🔴 Power Number ({pnumber_value:02d}) စုစုပေါင်း: {pnumber_total}")
+            
+            await query.edit_message_text("\n".join(msg))
+        else:
+            await query.edit_message_text(f"ℹ️ {username} အတွက် စာရင်းမရှိပါ")
+            
+    except Exception as e:
+        logger.error(f"Error in posthis_callback: {str(e)}")
+        await query.edit_message_text("❌ Error occurred")
 
 if __name__ == "__main__":
     if not TOKEN:
@@ -902,7 +1003,9 @@ if __name__ == "__main__":
         
     app = ApplicationBuilder().token(TOKEN).build()
 
+    # Command handlers
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("menu", show_menu))
     app.add_handler(CommandHandler("dateopen", dateopen))
     app.add_handler(CommandHandler("dateclose", dateclose))
     app.add_handler(CommandHandler("ledger", ledger_summary))
@@ -914,7 +1017,9 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("tsent", tsent))
     app.add_handler(CommandHandler("alldata", alldata))
     app.add_handler(CommandHandler("reset", reset_data))
+    app.add_handler(CommandHandler("posthis", posthis))
 
+    # Callback handlers
     app.add_handler(CallbackQueryHandler(comza_input, pattern=r"^comza:"))
     app.add_handler(CallbackQueryHandler(delete_bet, pattern=r"^delete:"))
     app.add_handler(CallbackQueryHandler(confirm_delete, pattern=r"^confirm_delete:"))
@@ -923,6 +1028,9 @@ if __name__ == "__main__":
     app.add_handler(CallbackQueryHandler(overbuy_select_all, pattern=r"^overbuy_select_all$"))
     app.add_handler(CallbackQueryHandler(overbuy_unselect_all, pattern=r"^overbuy_unselect_all$"))
     app.add_handler(CallbackQueryHandler(overbuy_confirm, pattern=r"^overbuy_confirm$"))
+    app.add_handler(CallbackQueryHandler(posthis_callback, pattern=r"^posthis:"))
+
+    # Message handlers
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, comza_text))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
