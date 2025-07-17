@@ -136,18 +136,35 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         total_amount += amt * 2
                         i += 3
                         continue
-            
             if '/' in entry:
-                parts = entry.split('/')
-                if len(parts) >= 3 and all(p.isdigit() for p in parts):
-                    amt = int(parts[-1])
-                    for num_str in parts[:-1]:
-                        num = int(num_str)
-                        if 0 <= num <= 99:
-                            bets.append(f"{num:02d}-{amt}")
-                            total_amount += amt
-                    i += 1
-                    continue
+    parts = entry.split('/')
+    
+    # New pattern: last part contains 'r' (e.g., "1000r500")
+    if len(parts) >= 3 and all(p.isdigit() for p in parts[:-1]) and 'r' in parts[-1]:
+        r_parts = parts[-1].split('r', 1)
+        if len(r_parts) == 2 and r_parts[0].isdigit() and r_parts[1].isdigit():
+            amt1 = int(r_parts[0])
+            amt2 = int(r_parts[1])
+            for num_str in parts[:-1]:
+                num = int(num_str)
+                if 0 <= num <= 99:
+                    rev = reverse_number(num)
+                    bets.append(f"{num:02d}-{amt1}")
+                    bets.append(f"{rev:02d}-{amt2}")
+                    total_amount += amt1 + amt2
+            i += 1
+            continue
+    
+    # Original pattern: all parts are digits
+    if len(parts) >= 3 and all(p.isdigit() for p in parts):
+        amt = int(parts[-1])
+        for num_str in parts[:-1]:
+            num = int(num_str)
+            if 0 <= num <= 99:
+                bets.append(f"{num:02d}-{amt}")
+                total_amount += amt
+        i += 1
+        continue
             
             if '-' in entry and 'r' not in entry:
                 parts = entry.split('-')
