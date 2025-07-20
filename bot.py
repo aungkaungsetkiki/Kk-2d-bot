@@ -132,236 +132,81 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("⚠️ မက်ဆေ့ဂျ်မရှိပါ")
             return
 
-        if any(c in text for c in ['%', '&', '*', '$']):
-            await update.message.reply_text("⚠️ မှားနေပါတယ်\nအထူးသင်္ကေတများ (%&*$) မပါရပါ\nဥပမာ: 12-500")
-            return
-
-        entries = text.split()
-        bets = []
+        # Process the message line by line
+        lines = text.split('\n')
+        all_bets = []
         total_amount = 0
 
-        i = 0
-        while i < len(entries):
-            entry = entries[i]
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+
+            # Check for special cases first
+            special_cases = {
+                "အပူး": [0, 11, 22, 33, 44, 55, 66, 77, 88, 99],
+                "ပါဝါ": [5, 16, 27, 38, 49, 50, 61, 72, 83, 94],
+                "နက္ခ": [7, 18, 24, 35, 42, 53, 69, 70, 81, 96],
+                "ညီကို": [1, 12, 23, 34, 45, 56, 67, 78, 89, 90],
+                "ကိုညီ": [9, 10, 21, 32, 43, 54, 65, 76, 87, 98],
+            }
+
+            dynamic_types = ["ထိပ်", "ပိတ်", "ဘရိတ်", "အပါ"]
             
-            # Improved handling for formats like 12-56-78r1000
-            if 'r' in entry and '-' in entry:
-                parts = entry.split('r')
-                if len(parts) == 2 and parts[1].isdigit():
-                    base_amount = int(parts[1])
-                    reverse_amount = int(parts[1])
-                    
-                    # Split left part by '-' to get numbers
-                    numbers = []
-                    for num_str in parts[0].split('-'):
-                        if num_str.isdigit():
-                            num = int(num_str)
-                            if 0 <= num <= 99:
-                                numbers.append(num)
-                    
-                    if numbers:
-                        for num in numbers:
-                            bets.append(f"{num:02d}-{base_amount}")
-                            rev = reverse_number(num)
-                            bets.append(f"{rev:02d}-{reverse_amount}")
-                            total_amount += base_amount + reverse_amount
-                        i += 1
-                        continue
-            
-            # Improved handling for formats like 12-56-78-1000r500
-            if 'r' in entry and '-' in entry:
-                parts = entry.split('r')
-                if len(parts) == 2 and parts[1].isdigit():
-                    reverse_amount = int(parts[1])
-                    
-                    # Split left part by '-' to get numbers and base amount
-                    left_parts = parts[0].split('-')
-                    if len(left_parts) >= 2 and left_parts[-1].isdigit():
-                        base_amount = int(left_parts[-1])
-                        numbers = []
-                        for num_str in left_parts[:-1]:
-                            if num_str.isdigit():
-                                num = int(num_str)
-                                if 0 <= num <= 99:
-                                    numbers.append(num)
-                        
-                        if numbers:
-                            for num in numbers:
-                                bets.append(f"{num:02d}-{base_amount}")
-                                rev = reverse_number(num)
-                                bets.append(f"{rev:02d}-{reverse_amount}")
-                                total_amount += base_amount + reverse_amount
-                            i += 1
-                            continue
-            
-            # Improved handling for formats like 67/34/12/1000r500
-            if '/' in entry and 'r' in entry:
-                parts = entry.split('/')
-                # Find the part with 'r'
-                r_index = -1
-                for j, part in enumerate(parts):
-                    if 'r' in part:
-                        r_index = j
-                        break
-                
-                if r_index > 0:
-                    numbers = []
-                    for j in range(r_index):
-                        if parts[j].isdigit():
-                            num = int(parts[j])
-                            if 0 <= num <= 99:
-                                numbers.append(num)
-                    
-                    if parts[r_index].count('r') == 1:
-                        amt_parts = parts[r_index].split('r')
-                        if len(amt_parts) == 2 and amt_parts[0].isdigit() and amt_parts[1].isdigit():
-                            base_amt = int(amt_parts[0])
-                            reverse_amt = int(amt_parts[1])
-                            
-                            for num in numbers:
-                                bets.append(f"{num:02d}-{base_amt}")
-                                rev = reverse_number(num)
-                                bets.append(f"{rev:02d}-{reverse_amt}")
-                                total_amount += base_amt + reverse_amt
-                            
-                            # Check if there's a next part for additional reverse
-                            if r_index + 1 < len(parts) and parts[r_index+1].isdigit():
-                                extra_rev_amt = int(parts[r_index+1])
-                                for num in numbers:
-                                    rev = reverse_number(num)
-                                    bets.append(f"{rev:02d}-{extra_rev_amt}")
-                                    total_amount += extra_rev_amt
-                                i += 1  # Skip extra amount
-                                
-                            i += 1
-                            continue
-            
-            # Improved handling for formats like 12-34-56-100r200
-            if '-' in entry and 'r' in entry:
-                parts = entry.split('-')
-                # Find the part with 'r'
-                r_index = -1
-                for j, part in enumerate(parts):
-                    if 'r' in part:
-                        r_index = j
-                        break
-                
-                if r_index > 0:
-                    numbers = []
-                    for j in range(r_index):
-                        if parts[j].isdigit():
-                            num = int(parts[j])
-                            if 0 <= num <= 99:
-                                numbers.append(num)
-                    
-                    if parts[r_index].count('r') == 1:
-                        amt_parts = parts[r_index].split('r')
-                        if len(amt_parts) == 2 and amt_parts[0].isdigit() and amt_parts[1].isdigit():
-                            base_amt = int(amt_parts[0])
-                            reverse_amt = int(amt_parts[1])
-                            
-                            for num in numbers:
-                                bets.append(f"{num:02d}-{base_amt}")
-                                rev = reverse_number(num)
-                                bets.append(f"{rev:02d}-{reverse_amt}")
-                                total_amount += base_amt + reverse_amt
-                            
-                            # Check if there's a next part for additional reverse
-                            if r_index + 1 < len(parts) and parts[r_index+1].isdigit():
-                                extra_rev_amt = int(parts[r_index+1])
-                                for num in numbers:
-                                    rev = reverse_number(num)
-                                    bets.append(f"{rev:02d}-{extra_rev_amt}")
-                                    total_amount += extra_rev_amt
-                                i += 1  # Skip extra amount
-                                
-                            i += 1
-                            continue
-            
-            # Original parsing logic with improvements
-            if i + 2 < len(entries):
-                if (entries[i].isdigit() and entries[i+1].isdigit() and entries[i+2].isdigit()):
-                    num1 = int(entries[i])
-                    num2 = int(entries[i+1])
-                    amt = int(entries[i+2])
-                    
-                    if 0 <= num1 <= 99 and 0 <= num2 <= 99:
-                        bets.append(f"{num1:02d}-{amt}")
-                        bets.append(f"{num2:02d}-{amt}")
-                        total_amount += amt * 2
-                        i += 3
-                        continue
-            
-            if '/' in entry:
-                parts = entry.split('/')
-                if len(parts) >= 3 and all(p.isdigit() for p in parts):
-                    amt = int(parts[-1])
-                    for num_str in parts[:-1]:
-                        num = int(num_str)
-                        if 0 <= num <= 99:
-                            bets.append(f"{num:02d}-{amt}")
+            # Check for special cases
+            found_special = False
+            for case_name, case_numbers in special_cases.items():
+                if line.startswith(case_name):
+                    parts = line.split()
+                    if len(parts) >= 2 and parts[1].isdigit() and int(parts[1]) >= 100:
+                        amt = int(parts[1])
+                        for num in case_numbers:
+                            all_bets.append(f"{num:02d}-{amt}")
                             total_amount += amt
-                    i += 1
-                    continue
+                        found_special = True
+                        break
             
-            if '-' in entry and 'r' not in entry:
-                parts = entry.split('-')
-                if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
-                    num = int(parts[0])
-                    amt = int(parts[1])
-                    if 0 <= num <= 99:
-                        bets.append(f"{num:02d}-{amt}")
-                        total_amount += amt
-                        i += 1
-                        continue
+            if found_special:
+                continue
+
+            # Check for dynamic types
+            for dtype in dynamic_types:
+                if dtype in line:
+                    parts = line.split()
+                    for part in parts:
+                        if dtype in part:
+                            prefix = part.replace(dtype, '')
+                            if prefix.isdigit():
+                                digit_val = int(prefix)
+                                if 0 <= digit_val <= 9:
+                                    numbers = []
+                                    if dtype == "ထိပ်":
+                                        numbers = [digit_val * 10 + j for j in range(10)]
+                                    elif dtype == "ပိတ်":
+                                        numbers = [j * 10 + digit_val for j in range(10)]
+                                    elif dtype == "ဘရိတ်":
+                                        numbers = [n for n in range(100) if (n//10 + n%10) % 10 == digit_val]
+                                    elif dtype == "အပါ":
+                                        tens = [digit_val * 10 + j for j in range(10)]
+                                        units = [j * 10 + digit_val for j in range(10)]
+                                        numbers = list(set(tens + units))
+                                    
+                                    if len(parts) > parts.index(part) + 1 and parts[parts.index(part) + 1].isdigit() and int(parts[parts.index(part) + 1]) >= 100:
+                                        amt = int(parts[parts.index(part) + 1])
+                                        for num in numbers:
+                                            all_bets.append(f"{num:02d}-{amt}")
+                                            total_amount += amt
+                                        found_special = True
+                                    break
+                    if found_special:
+                        break
             
-            if 'r' in entry and '-' not in entry:
-                parts = entry.split('r')
-                if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
-                    num = int(parts[0])
-                    amt = int(parts[1])
-                    rev = reverse_number(num)
-                    if 0 <= num <= 99:
-                        bets.append(f"{num:02d}-{amt}")
-                        bets.append(f"{rev:02d}-{amt}")
-                        total_amount += amt * 2
-                    i += 1
-                    continue
-            
-            if 'r' in entry and '-' in entry:
-                main_part, r_part = entry.split('r', 1)
-                if '-' in main_part:
-                    num_part, amt_part = main_part.split('-')
-                    if num_part.isdigit() and amt_part.isdigit() and r_part.isdigit():
-                        num = int(num_part)
-                        amt1 = int(amt_part)
-                        amt2 = int(r_part)
-                        rev = reverse_number(num)
-                        if 0 <= num <= 99:
-                            bets.append(f"{num:02d}-{amt1}")
-                            bets.append(f"{rev:02d}-{amt2}")
-                            total_amount += amt1 + amt2
-                        i += 1
-                        continue
-            
-            if entry.isdigit() and i+1 < len(entries) and 'r' in entries[i+1]:
-                num = int(entry)
-                r_part = entries[i+1]
-                if r_part.count('r') == 1:
-                    amt_part1, amt_part2 = r_part.split('r')
-                    if amt_part1.isdigit() and amt_part2.isdigit():
-                        amt1 = int(amt_part1)
-                        amt2 = int(amt_part2)
-                        rev = reverse_number(num)
-                        if 0 <= num <= 99:
-                            bets.append(f"{num:02d}-{amt1}")
-                            bets.append(f"{rev:02d}-{amt2}")
-                            total_amount += amt1 + amt2
-                        i += 2
-                        continue
-            
-            if 'အခွေ' in entry or 'အပူးပါအခွေ' in entry:
-                base = entry.replace('အခွေ', '').replace('အပူးပါ', '')
+            if found_special:
+                continue
+
+            # Check for wheel case
+            if 'အခွေ' in line or 'အပူးပါအခွေ' in line:
+                base = line.replace('အခွေ', '').replace('အပူးပါ', '').strip()
                 if base.isdigit() and len(base) >= 2:
                     digits = [int(d) for d in base]
                     pairs = []
@@ -372,112 +217,136 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 if combo not in pairs:
                                     pairs.append(combo)
                     
-                    if 'အပူးပါအခွေ' in entry:
+                    if 'အပူးပါအခွေ' in line:
                         for d in digits:
                             double = d * 10 + d
                             if double not in pairs:
                                 pairs.append(double)
                     
-                    if i+1 < len(entries) and entries[i+1].isdigit():
-                        amt = int(entries[i+1])
+                    parts = line.split()
+                    if len(parts) >= 2 and parts[-1].isdigit() and int(parts[-1]) >= 100:
+                        amt = int(parts[-1])
                         for num in pairs:
-                            bets.append(f"{num:02d}-{amt}")
+                            all_bets.append(f"{num:02d}-{amt}")
                             total_amount += amt
-                        i += 2
                         continue
-            
-            fixed_special_cases = {
-                "အပူး": [0, 11, 22, 33, 44, 55, 66, 77, 88, 99],
-                "ပါဝါ": [5, 16, 27, 38, 49, 50, 61, 72, 83, 94],
-                "နက္ခ": [7, 18, 24, 35, 42, 53, 69, 70, 81, 96],
-                "ညီကို": [1, 12, 23, 34, 45, 56, 67, 78, 89, 90],
-                "ကိုညီ": [9, 10, 21, 32, 43, 54, 65, 76, 87, 98],
-            }
-            
-            if entry in fixed_special_cases:
-                if i+1 < len(entries) and entries[i+1].isdigit():
-                    amt = int(entries[i+1])
-                    for num in fixed_special_cases[entry]:
-                        bets.append(f"{num:02d}-{amt}")
-                        total_amount += amt
-                    i += 2
-                    continue
-            
-            dynamic_types = ["ထိပ်", "ပိတ်", "ဘရိတ်", "အပါ"]
-            found_dynamic = False
-            for dtype in dynamic_types:
-                if entry.endswith(dtype):
-                    prefix = entry[:-len(dtype)]
-                    if prefix.isdigit():
-                        digit_val = int(prefix)
-                        if 0 <= digit_val <= 9:
-                            numbers = []
-                            if dtype == "ထိပ်":
-                                numbers = [digit_val * 10 + j for j in range(10)]
-                            elif dtype == "ပိတ်":
-                                numbers = [j * 10 + digit_val for j in range(10)]
-                            elif dtype == "ဘရိတ်":
-                                numbers = [n for n in range(100) if (n//10 + n%10) % 10 == digit_val]
-                            elif dtype == "အပါ":
-                                tens = [digit_val * 10 + j for j in range(10)]
-                                units = [j * 10 + digit_val for j in range(10)]
-                                numbers = list(set(tens + units))
-                            
-                            if i+1 < len(entries) and entries[i+1].isdigit():
-                                amt = int(entries[i+1])
-                                for num in numbers:
-                                    bets.append(f"{num:02d}-{amt}")
-                                    total_amount += amt
-                                i += 2
-                                found_dynamic = True
-                            break
-            if found_dynamic:
-                continue
-            
-            if entry.isdigit():
-                num = int(entry)
-                if 0 <= num <= 99:
-                    if i+1 < len(entries) and entries[i+1].isdigit():
-                        amt = int(entries[i+1])
-                        bets.append(f"{num:02d}-{amt}")
-                        total_amount += amt
-                        i += 2
-                    else:
-                        bets.append(f"{num:02d}-500")
-                        total_amount += 500
-                        i += 1
-                    continue
-            
-            i += 1
 
+            # Process regular number-amount pairs with r/R
+            if 'r' in line.lower():
+                # Split the line into parts
+                parts = re.split(r'[,\s\-+.,=*/\r]', line)
+                parts = [p.strip() for p in parts if p.strip()]
+                
+                # Find the r/R position
+                r_pos = -1
+                for i, part in enumerate(parts):
+                    if 'r' in part.lower():
+                        r_pos = i
+                        break
+                
+                if r_pos == -1:
+                    continue
+                
+                # Get numbers before r/R
+                numbers = []
+                for part in parts[:r_pos]:
+                    if part.isdigit() and 0 <= int(part) <= 99:
+                        numbers.append(int(part))
+                
+                if not numbers:
+                    continue
+                
+                # Get amounts after r/R
+                amounts = []
+                r_part = parts[r_pos]
+                if r_part.lower().startswith('r'):
+                    # Format: r1000 or r500
+                    amount_str = r_part[1:]
+                    if amount_str.isdigit() and int(amount_str) >= 100:
+                        amounts.append(int(amount_str))
+                        # Check if there's another amount after
+                        if len(parts) > r_pos + 1 and parts[r_pos + 1].isdigit() and int(parts[r_pos + 1]) >= 100:
+                            amounts.append(int(parts[r_pos + 1]))
+                else:
+                    # Format: 1000r500
+                    amount_parts = r_part.lower().split('r')
+                    if len(amount_parts) == 2:
+                        if amount_parts[0].isdigit() and int(amount_parts[0]) >= 100:
+                            amounts.append(int(amount_parts[0]))
+                        if amount_parts[1].isdigit() and int(amount_parts[1]) >= 100:
+                            amounts.append(int(amount_parts[1]))
+                
+                if not amounts:
+                    continue
+                
+                # Apply amounts to numbers
+                if len(amounts) == 1:
+                    # Single amount: apply to both base and reverse
+                    for num in numbers:
+                        all_bets.append(f"{num:02d}-{amounts[0]}")
+                        all_bets.append(f"{reverse_number(num):02d}-{amounts[0]}")
+                        total_amount += amounts[0] * 2
+                else:
+                    # Two amounts: first for base, second for reverse
+                    for num in numbers:
+                        all_bets.append(f"{num:02d}-{amounts[0]}")
+                        all_bets.append(f"{reverse_number(num):02d}-{amounts[1]}")
+                        total_amount += amounts[0] + amounts[1]
+                
+                continue
+
+            # Process regular number-amount pairs without r/R
+            parts = re.split(r'[,\s\-+.,=*/\r]', line)
+            parts = [p.strip() for p in parts if p.strip()]
+            
+            numbers = []
+            current_amount = None
+            
+            for part in parts:
+                if part.isdigit():
+                    num = int(part)
+                    if 0 <= num <= 99:
+                        numbers.append(num)
+                    elif num >= 100:
+                        current_amount = num
+            
+            if current_amount and numbers:
+                for num in numbers:
+                    all_bets.append(f"{num:02d}-{current_amount}")
+                    total_amount += current_amount
+
+        if not all_bets:
+            await update.message.reply_text("⚠️ အချက်အလက်များကိုစစ်ဆေးပါ\nဥပမာ: 12-1000, 12/34r1000, 12/34/56-1500")
+            return
+
+        # Update data stores
         if user.username not in user_data:
             user_data[user.username] = {}
         if key not in user_data[user.username]:
             user_data[user.username][key] = []
 
-        # Initialize ledger for this date if not exists
         if key not in ledger:
             ledger[key] = {}
 
-        for bet in bets:
+        for bet in all_bets:
             num, amt = bet.split('-')
             num = int(num)
             amt = int(amt)
             
-            # Update ledger for this date
-            ledger[key][num] = ledger[key].get(num, 0) + amt
+            # Update ledger
+            if num not in ledger[key]:
+                ledger[key][num] = 0
+            ledger[key][num] += amt
             
             # Update user data
             user_data[user.username][key].append((num, amt))
 
-        if bets:
-            response = "\n".join(bets) + f"\nစုစုပေါင်း {total_amount} ကျပ်"
-            keyboard = [[InlineKeyboardButton("🗑 Delete", callback_data=f"delete:{user.id}:{update.message.message_id}:{key}")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            sent_message = await update.message.reply_text(response, reply_markup=reply_markup)
-            message_store[(user.id, update.message.message_id)] = (sent_message.message_id, bets, total_amount, key)
-        else:
-            await update.message.reply_text("⚠️ အချက်အလက်များကိုစစ်ဆေးပါ")
+        # Send confirmation with delete button
+        response = "\n".join(all_bets) + f"\nစုစုပေါင်း {total_amount} ကျပ်"
+        keyboard = [[InlineKeyboardButton("🗑 Delete", callback_data=f"delete:{user.id}:{update.message.message_id}:{key}")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        sent_message = await update.message.reply_text(response, reply_markup=reply_markup)
+        message_store[(user.id, update.message.message_id)] = (sent_message.message_id, all_bets, total_amount, key)
             
     except Exception as e:
         logger.error(f"Error in handle_message: {str(e)}")
@@ -1273,7 +1142,7 @@ async def posthis_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 await query.edit_message_text(f"ℹ️ {username} အတွက် စာရင်းမရှိပါ")
         else:
-            await query.edit_message_text(f"ℹ️ {username} အတွက် စာရင်း�မရှိပါ")
+            await query.edit_message_text(f"ℹ️ {username} အတွက် စာရင်းမရှိပါ")
             
     except Exception as e:
         logger.error(f"Error in posthis_callback: {str(e)}")
@@ -1361,71 +1230,138 @@ async def dateall_view(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         dateall_selections = context.user_data.get('dateall_selections', {})
-        
-        # Get selected dates
         selected_dates = [date for date, selected in dateall_selections.items() if selected]
         
         if not selected_dates:
             await query.edit_message_text("⚠️ မည်သည့်နေ့ရက်ကိုမှ မရွေးချယ်ထားပါ")
             return
             
-        # Aggregate data for each user across selected dates
-        user_totals = {}
-        overall_total = 0
-        overall_power_total = 0
-        
+        user_reports = []
+        total_bets = 0
+        total_power = 0
+        total_net = 0
+
+        # ရိုးရိုး user များအတွက် တွက်ချက်ခြင်း
         for user in user_data:
-            user_total_amt = 0
-            user_pamt = 0
+            user_total = 0
+            user_power = 0
             
             for date in selected_dates:
-                if user in user_data and date in user_data[user]:
-                    # Get pnumber for this date if exists
-                    pnum = pnumber_per_date.get(date, None)
-                    
+                if date in user_data[user]:
                     for num, amt in user_data[user][date]:
-                        user_total_amt += amt
-                        if pnum is not None and num == pnum:
-                            user_pamt += amt
+                        user_total += amt
+                        if date in pnumber_per_date and num == pnumber_per_date[date]:
+                            user_power += amt
             
-            if user_total_amt > 0:
-                user_totals[user] = {
-                    'total': user_total_amt,
-                    'power_total': user_pamt
-                }
-                overall_total += user_total_amt
-                overall_power_total += user_pamt
-        
-        # Build report
-        msg = ["📊 ရွေးချယ်ထားသည့် နေ့ရက်များ စုပေါင်းရလဒ်:"]
+            if user_total > 0:
+                com = com_data.get(user, 0)
+                za = za_data.get(user, 80)  # Default Za 80
+                
+                commission = (user_total * com) // 100
+                after_com = user_total - commission
+                win_amount = user_power * za
+                net = after_com - win_amount
+                
+                user_reports.append({
+                    'username': user,
+                    'total': user_total,
+                    'commission': commission,
+                    'after_com': after_com,
+                    'power_total': user_power,
+                    'win_amount': win_amount,
+                    'net': net,
+                    'is_overbuy': False
+                })
+                
+                total_bets += user_total
+                total_power += user_power
+                total_net += net
+
+        # Overbuy user များအတွက် တွက်ချက်ခြင်း
+        for date in selected_dates:
+            if date in overbuy_list:
+                for user, overbuys in overbuy_list[date].items():
+                    user_total = 0
+                    user_power = 0
+                    
+                    for num, amt in overbuys.items():
+                        user_total += abs(amt)
+                        if date in pnumber_per_date and num == pnumber_per_date[date]:
+                            user_power += abs(amt)
+                    
+                    if user_total > 0:
+                        com = com_data.get(user, 0)
+                        za = za_data.get(user, 80)
+                        
+                        commission = (user_total * com) // 100
+                        after_com = user_total - commission
+                        win_amount = user_power * za
+                        net = after_com - win_amount
+                        
+                        user_reports.append({
+                            'username': user,
+                            'total': -user_total,  # Overbuy ဖြစ်ကြောင်း ပြသရန် -
+                            'commission': -commission,
+                            'after_com': -after_com,
+                            'power_total': -user_power,
+                            'win_amount': -win_amount,
+                            'net': net,
+                            'is_overbuy': True
+                        })
+                        
+                        total_bets -= user_total
+                        total_power -= user_power
+                        total_net += net
+
+        # အစီရင်ခံစာတည်ဆောက်ခြင်း
+        msg = [f"📊 ရွေးချယ်ထားသည့် နေ့ရက်များ စုပေါင်းရလဒ်:"]
         msg.append(f"📅 နေ့ရက်များ: {', '.join(selected_dates)}\n")
         
-        # Add overbuy data
-        for date in selected_dates:
-            if date in overbuy_list and user in overbuy_list[date]:
-                if user not in user_totals:
-                    user_totals[user] = {'total': 0, 'power_total': 0}
-                
-                overbuy_data = overbuy_list[date][user]
-                if overbuy_data:
-                    msg.append(f"👤 {user} - {date} Overbuy:")
-                    for num, amt in overbuy_data.items():
-                        msg.append(f"  - {num:02d} ➤ {amt}")
-                    msg.append("")
+        for report in user_reports:
+            if report['is_overbuy']:
+                msg.append(f"👤 {report['username']}(overbuy အမည်)")
+            else:
+                msg.append(f"👤 {report['username']}:(ရိုးရိုးuser)")
+            
+            msg.append(f"💵 စုစုပေါင်း: {report['total']}")
+            msg.append(f"📊 Com({com_data.get(report['username'], 0)}%) ➤ {report['commission']}")
+            msg.append(f"💰 Com ပြီး: {report['after_com']}")
+            
+            if report['power_total'] != 0:
+                msg.append(f"🔢 Power Number စုစုပေါင်း: {report['power_total']}")
+                msg.append(f"🎯 Za({za_data.get(report['username'], 80)}) ➤ {report['win_amount']}")
+            
+            status = "ဒိုင်ကပေးရမည်" if report['net'] < 0 else "ဒိုင်ကရမည်"
+            msg.append(f"📈 ရလဒ်: {abs(report['net'])} ({status})")
+            msg.append("-----------------")
+
+        # စုစုပေါင်းရလဒ်
+        msg.append("\n📊 စုစုပေါင်း:")
+        msg.append(f"💵 လောင်းကြေးစုစုပေါင်း: {total_bets}")
         
-        for user, data in user_totals.items():
-            msg.append(f"👤 {user}:")
-            msg.append(f"  💵 စုစုပေါင်း: {data['total']}")
-            msg.append(f"  🔴 Power Number စုစုပေါင်း: {data['power_total']}")
-            msg.append("")
+        if total_power != 0:
+            msg.append(f"🔴 Power Number စုစုပေါင်း: {total_power}")
         
-        if user_totals:
-            msg.append(f"📊 စုစုပေါင်း:")
-            msg.append(f"  💵 လောင်းကြေးစုစုပေါင်း: {overall_total}")
-            msg.append(f"  🔴 Power Number စုစုပေါင်း: {overall_power_total}")
-            await query.edit_message_text("\n".join(msg))
-        else:
-            await query.edit_message_text("ℹ️ ရွေးချယ်ထားသည့် နေ့ရက်များတွင် ဒေတာမရှိပါ")
+        overall_status = "ဒိုင်အရှုံး" if total_net < 0 else "ဒိုင်အမြတ်"
+        msg.append(f"📈 စုစုပေါင်းရလဒ်: {abs(total_net)}({overall_status})")
+
+
+             # Telegram message limit ထက်မကျော်အောင် စာပိုဒ်ခွဲပို့ခြင်း
+        max_length = 4000
+        current_msg = []
+        current_len = 0
+        
+        for line in msg:
+            line_len = len(line) + 1
+            if current_len + line_len > max_length:
+                await context.bot.send_message(chat_id=query.message.chat_id, text="\n".join(current_msg))
+                current_msg = []
+                current_len = 0
+            current_msg.append(line)
+            current_len += line_len
+        
+        if current_msg:
+            await query.edit_message_text("\n".join(current_msg))
         
     except Exception as e:
         logger.error(f"Error in dateall_view: {str(e)}")
@@ -1727,6 +1663,7 @@ async def datedelete_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE)
         logger.error(f"Error in datedelete_confirm: {str(e)}")
         await query.edit_message_text("❌ Error occurred")
 
+
 if __name__ == "__main__":
     if not TOKEN:
         raise ValueError("❌ BOT_TOKEN environment variable is not set")
@@ -1765,7 +1702,7 @@ if __name__ == "__main__":
     app.add_handler(CallbackQueryHandler(dateall_toggle, pattern=r"^dateall_toggle:"))
     app.add_handler(CallbackQueryHandler(dateall_view, pattern=r"^dateall_view$"))
     
-    # New calendar handlers
+    # Calendar handlers
     app.add_handler(CallbackQueryHandler(show_calendar, pattern=r"^cdate_calendar$"))
     app.add_handler(CallbackQueryHandler(handle_day_selection, pattern=r"^cdate_day:"))
     app.add_handler(CallbackQueryHandler(set_am, pattern=r"^cdate_am$"))
