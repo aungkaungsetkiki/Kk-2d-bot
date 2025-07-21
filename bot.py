@@ -142,7 +142,47 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not line:
                 continue
 
-            # Check for special cases first
+            # Check for wheel cases first (your requested implementation)
+            if 'အခွေ' in line or 'အပူးပါအခွေ' in line:
+                # Extract base numbers and amount
+                if 'အခွေ' in line:
+                    parts = line.split('အခွေ')
+                    base_part = parts[0]
+                    amount_part = parts[1]
+                else:
+                    parts = line.split('အပူးပါအခွေ')
+                    base_part = parts[0]
+                    amount_part = parts[1]
+                
+                # Clean base numbers (remove all non-digits)
+                base_numbers = ''.join([c for c in base_part if c.isdigit()])
+                
+                # Clean amount (remove all non-digits)
+                amount = int(''.join([c for c in amount_part if c.isdigit()]))
+                
+                # Generate all possible pairs
+                pairs = []
+                for i in range(len(base_numbers)):
+                    for j in range(len(base_numbers)):
+                        if i != j:
+                            num = int(base_numbers[i] + base_numbers[j])
+                            if num not in pairs:
+                                pairs.append(num)
+                
+                # If အပူးပါအခွေ, add doubles
+                if 'အပူးပါအခွေ' in line:
+                    for d in base_numbers:
+                        double = int(d + d)
+                        if double not in pairs:
+                            pairs.append(double)
+                
+                # Add all bets
+                for num in pairs:
+                    all_bets.append(f"{num:02d}-{amount}")
+                    total_amount += amount
+                continue
+
+            # Check for special cases
             special_cases = {
                 "အပူး": [0, 11, 22, 33, 44, 55, 66, 77, 88, 99],
                 "ပါဝါ": [5, 16, 27, 38, 49, 50, 61, 72, 83, 94],
@@ -203,33 +243,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             if found_special:
                 continue
-
-            # Check for wheel case
-            if 'အခွေ' in line or 'အပူးပါအခွေ' in line:
-                base = line.replace('အခွေ', '').replace('အပူးပါ', '').strip()
-                if base.isdigit() and len(base) >= 2:
-                    digits = [int(d) for d in base]
-                    pairs = []
-                    for j in range(len(digits)):
-                        for k in range(len(digits)):
-                            if j != k:
-                                combo = digits[j] * 10 + digits[k]
-                                if combo not in pairs:
-                                    pairs.append(combo)
-                    
-                    if 'အပူးပါအခွေ' in line:
-                        for d in digits:
-                            double = d * 10 + d
-                            if double not in pairs:
-                                pairs.append(double)
-                    
-                    parts = line.split()
-                    if len(parts) >= 2 and parts[-1].isdigit() and int(parts[-1]) >= 100:
-                        amt = int(parts[-1])
-                        for num in pairs:
-                            all_bets.append(f"{num:02d}-{amt}")
-                            total_amount += amt
-                        continue
 
             # Process regular number-amount pairs with r/R
             if 'r' in line.lower():
